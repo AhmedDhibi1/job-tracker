@@ -1,0 +1,38 @@
+spring:
+  application:
+    name: JobTracker
+  profiles:
+    default: dev
+  threads:
+    virtual:
+      enabled: true
+  main:
+    banner-mode: off
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    hikari:
+      maximum-pool-size: ${DB_POOL_MAX:8}
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: when_authorized
+
+info:
+  app:
+    name: "@project.name@"
+    version: "@project.version@"
+
+logging:
+  level:
+    root: INFO
+    com.jobtracker: DEBUG

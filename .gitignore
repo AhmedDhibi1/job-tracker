@@ -3,3 +3,9 @@ JobTracker_System_Architecture_C_2.md
 Next_Module_Implementation_Guide_first_module.md
 initial-prompt.md
 *.md
+target/
+.idea/
+.vscode/
+*.iml
+.env
+*.log
