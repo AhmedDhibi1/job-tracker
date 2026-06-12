@@ -6,6 +6,7 @@ import com.google.api.services.gmail.model.HistoryMessageAdded;
 import com.google.api.services.gmail.model.ListHistoryResponse;
 import com.jobtracker.emailmanagement.domain.model.EmailAccount;
 import com.jobtracker.emailmanagement.infrastructure.gmail.model.GmailHistoryRecord;
+import com.jobtracker.emailmanagement.infrastructure.gmail.model.HistoryDeltaInfraResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -15,13 +16,11 @@ import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.List;
 
-
 @Component
 public class GmailHistoryFetcher {
 
     private static final Logger log = LoggerFactory.getLogger(GmailHistoryFetcher.class);
 
-    /** Maximum number of history records per page. */
     private static final long PAGE_SIZE = 100;
 
     private final GmailClientFactory clientFactory;
@@ -30,23 +29,22 @@ public class GmailHistoryFetcher {
         this.clientFactory = clientFactory;
     }
 
-    public List<GmailHistoryRecord> fetchDelta(EmailAccount account, String fromHistoryId) {
+    public HistoryDeltaInfraResult fetchDelta(EmailAccount account, String fromHistoryId) {
         Gmail client = clientFactory.getClient(account);
         List<GmailHistoryRecord> records = new ArrayList<>();
 
         if (fromHistoryId == null || fromHistoryId.isBlank()) {
             log.warn("No historyId provided for account {}. Cannot perform delta sync.", account.getId());
-            return records;
+            return new HistoryDeltaInfraResult(List.of(), null);
         }
 
-        long startHistoryId;
+        BigInteger startHistoryId;
         try {
-            startHistoryId = Long.parseLong(fromHistoryId.trim());
+            startHistoryId = new BigInteger(fromHistoryId.trim());
         } catch (NumberFormatException e) {
             throw new IllegalArgumentException("Invalid historyId format: " + fromHistoryId, e);
         }
 
-        BigInteger originalStartHistoryId = BigInteger.valueOf(startHistoryId);
         String latestHistoryId = fromHistoryId;
         String pageToken = null;
 
@@ -54,7 +52,7 @@ public class GmailHistoryFetcher {
             do {
                 Gmail.Users.History.List request = client.users().history()
                         .list("me")
-                        .setStartHistoryId(originalStartHistoryId)
+                        .setStartHistoryId(startHistoryId)
                         .setMaxResults(PAGE_SIZE);
 
                 if (pageToken != null) {
@@ -85,12 +83,7 @@ public class GmailHistoryFetcher {
             log.info("Fetched {} history records for account {} since historyId {}",
                     records.size(), account.getId(), fromHistoryId);
 
-            if (!records.isEmpty()) {
-                records.set(records.size() - 1,
-                        new GmailHistoryRecord(latestHistoryId, records.getLast().addedMessageIds()));
-            }
-
-            return records;
+            return new HistoryDeltaInfraResult(records, latestHistoryId);
 
         } catch (IOException e) {
             log.error("Failed to fetch history delta for account {}: {}", account.getId(), e.getMessage());

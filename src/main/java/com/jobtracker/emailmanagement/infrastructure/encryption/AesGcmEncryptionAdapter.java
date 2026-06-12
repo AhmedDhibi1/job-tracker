@@ -73,20 +73,20 @@ public class AesGcmEncryptionAdapter implements EmailEncryptionPort {
     public String decrypt(String cipherText) {
         try {
             return decryptWithKey(cipherText, currentKey);
-        } catch (Exception e) {
-            if (e instanceof AEADBadTagException && previousKey != null) {
+        } catch (AEADBadTagException e) {
+            if (previousKey != null) {
                 try {
                     return decryptWithKey(cipherText, previousKey);
+                } catch (AEADBadTagException ex) {
+                    throw new DecryptionFailedException("Decryption failed with both current and previous keys", ex);
                 } catch (Exception ex) {
-                    if (ex instanceof AEADBadTagException) {
-                        throw new DecryptionFailedException("Decryption failed with both keys", ex);
-                    }
                     throw new EncryptionException("Decryption failed with previous key", ex);
                 }
             }
-            if (e instanceof AEADBadTagException) {
-                throw new DecryptionFailedException("Decryption failed with current key", e);
-            }
+            throw new DecryptionFailedException("Decryption failed with current key", e);
+        } catch (IllegalArgumentException e) {
+            throw new DecryptionFailedException("Invalid ciphertext format", e);
+        } catch (Exception e) {
             throw new EncryptionException("Decryption failed", e);
         }
     }

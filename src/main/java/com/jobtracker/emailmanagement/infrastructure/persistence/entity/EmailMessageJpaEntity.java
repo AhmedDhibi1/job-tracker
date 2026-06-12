@@ -12,7 +12,8 @@ import java.util.UUID;
 @Table(name = "email_messages", indexes = {
     @Index(name = "idx_email_account_sent", columnList = "email_account_id, sent_at"),
     @Index(name = "idx_gmail_thread_id", columnList = "gmail_thread_id"),
-    @Index(name = "idx_application_thread", columnList = "application_thread_id")
+    @Index(name = "idx_application_thread", columnList = "application_thread_id"),
+    @Index(name = "idx_gmail_message_id", columnList = "gmail_message_id")
 })
 public class EmailMessageJpaEntity {
 
@@ -87,7 +88,6 @@ public class EmailMessageJpaEntity {
     @Column(name = "version", nullable = false)
     private long version;
 
-    // Getters and setters
     public UUID getId() { return id; }
     public void setId(UUID id) { this.id = id; }
     public String getGmailMessageId() { return gmailMessageId; }

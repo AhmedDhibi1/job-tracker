@@ -5,12 +5,14 @@ import com.jobtracker.emailmanagement.domain.model.EmailMessage;
 import com.jobtracker.emailmanagement.infrastructure.persistence.entity.EmailMessageJpaEntity;
 import com.jobtracker.emailmanagement.infrastructure.persistence.mapper.EmailMessagePersistenceMapper;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
 @Repository
+@Transactional(readOnly = true)
 public class JpaEmailMessageRepositoryAdapter implements EmailMessageRepository {
 
     private final SpringDataEmailMessageRepository springDataRepository;
@@ -23,6 +25,7 @@ public class JpaEmailMessageRepositoryAdapter implements EmailMessageRepository 
     }
 
     @Override
+    @Transactional
     public EmailMessage save(EmailMessage message) {
         EmailMessageJpaEntity entity = mapper.toEntity(message);
         EmailMessageJpaEntity saved = springDataRepository.save(entity);

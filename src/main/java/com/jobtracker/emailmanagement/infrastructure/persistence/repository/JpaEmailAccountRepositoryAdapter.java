@@ -6,12 +6,14 @@ import com.jobtracker.emailmanagement.infrastructure.persistence.entity.EmailAcc
 import com.jobtracker.emailmanagement.infrastructure.persistence.mapper.EmailAccountPersistenceMapper;
 import com.jobtracker.shared.domain.valueobject.EmailAddress;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
 @Repository
+@Transactional(readOnly = true)
 public class JpaEmailAccountRepositoryAdapter implements EmailAccountRepository {
 
     private final SpringDataEmailAccountRepository springDataRepository;
@@ -44,6 +46,7 @@ public class JpaEmailAccountRepositoryAdapter implements EmailAccountRepository 
     }
 
     @Override
+    @Transactional
     public EmailAccount save(EmailAccount account) {
         EmailAccountJpaEntity entity = mapper.toEntity(account);
         EmailAccountJpaEntity saved = springDataRepository.save(entity);

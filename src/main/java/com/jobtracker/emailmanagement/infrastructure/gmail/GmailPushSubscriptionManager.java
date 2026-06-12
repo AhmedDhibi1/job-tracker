@@ -4,6 +4,7 @@ import com.google.api.services.gmail.Gmail;
 import com.google.api.services.gmail.model.WatchRequest;
 import com.google.api.services.gmail.model.WatchResponse;
 import com.jobtracker.emailmanagement.application.port.outbound.GmailProviderPort.WatchResult;
+import com.jobtracker.emailmanagement.application.port.outbound.PushSubscriptionPort;
 import com.jobtracker.emailmanagement.domain.model.EmailAccount;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -15,7 +16,7 @@ import java.time.Instant;
 import java.util.List;
 
 @Component
-public class GmailPushSubscriptionManager {
+public class GmailPushSubscriptionManager implements PushSubscriptionPort {
 
     private static final Logger log = LoggerFactory.getLogger(GmailPushSubscriptionManager.class);
 
@@ -69,6 +70,7 @@ public class GmailPushSubscriptionManager {
         return setupWatch(account);
     }
 
+    @Override
     public void stopWatch(EmailAccount account) {
         Gmail client = clientFactory.getClient(account);
 

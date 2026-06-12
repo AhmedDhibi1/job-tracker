@@ -1,5 +1,8 @@
 package com.jobtracker.emailmanagement.infrastructure.gmail;
 
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
+import com.github.benmanes.caffeine.cache.RemovalCause;
 import com.google.api.client.googleapis.javanet.GoogleNetHttpTransport;
 import com.google.api.client.http.HttpRequestInitializer;
 import com.google.api.client.http.javanet.NetHttpTransport;
@@ -9,6 +12,7 @@ import com.google.api.services.gmail.GmailScopes;
 import com.google.auth.http.HttpCredentialsAdapter;
 import com.google.auth.oauth2.GoogleCredentials;
 import com.google.auth.oauth2.UserCredentials;
+import com.jobtracker.emailmanagement.application.port.outbound.EmailAccountRepository;
 import com.jobtracker.emailmanagement.application.port.outbound.EmailEncryptionPort;
 import com.jobtracker.emailmanagement.domain.model.EmailAccount;
 import com.jobtracker.emailmanagement.domain.model.OAuthTokenPair;
@@ -22,12 +26,10 @@ import java.io.IOException;
 import java.security.GeneralSecurityException;
 import java.time.Instant;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
-
 
 @Component
 public class GmailClientFactory {
@@ -41,13 +43,13 @@ public class GmailClientFactory {
             GmailScopes.GMAIL_MODIFY
     );
 
-    /** Buffer before expiry to trigger proactive refresh (5 minutes). */
     private static final long EXPIRY_BUFFER_SECONDS = 300;
 
     private final EmailEncryptionPort encryptionPort;
+    private final EmailAccountRepository accountRepository;
     private final NetHttpTransport httpTransport;
-    private final Map<String, Gmail> clientCache = new ConcurrentHashMap<>();
-    private final Map<UUID, Lock> accountLocks = new ConcurrentHashMap<>();
+    private final Cache<String, Gmail> clientCache;
+    private final Cache<UUID, Lock> accountLocks;
 
     private final String applicationName;
     private final String googleClientId;
@@ -55,10 +57,12 @@ public class GmailClientFactory {
 
     public GmailClientFactory(
             EmailEncryptionPort encryptionPort,
-            @Value("${google.oauth.client-id}") String googleClientId,
-            @Value("${google.oauth.client-secret}") String googleClientSecret,
+            EmailAccountRepository accountRepository,
+            @Value("${gmail.oauth.client-id}") String googleClientId,
+            @Value("${gmail.oauth.client-secret}") String googleClientSecret,
             @Value("${app.name:JobTracker/1.0}") String applicationName) {
         this.encryptionPort = encryptionPort;
+        this.accountRepository = accountRepository;
         this.googleClientId = googleClientId;
         this.googleClientSecret = googleClientSecret;
         this.applicationName = applicationName;
@@ -67,11 +71,25 @@ public class GmailClientFactory {
         } catch (GeneralSecurityException | IOException e) {
             throw new IllegalStateException("Failed to initialize Gmail HTTP transport", e);
         }
+
+        this.clientCache = Caffeine.newBuilder()
+                .expireAfterWrite(30, TimeUnit.MINUTES)
+                .maximumSize(1000)
+                .removalListener((String key, Gmail value, RemovalCause cause) -> {
+                    if (cause.wasEvicted()) {
+                        log.debug("Evicted Gmail client from cache for key {}", key);
+                    }
+                })
+                .build();
+
+        this.accountLocks = Caffeine.newBuilder()
+                .maximumSize(200)
+                .expireAfterAccess(5, TimeUnit.MINUTES)
+                .<UUID, Lock>build();
     }
 
-
     public Gmail getClient(EmailAccount account) {
-        Lock lock = accountLocks.computeIfAbsent(account.getId(), k -> new ReentrantLock());
+        Lock lock = accountLocks.get(account.getId(), k -> new ReentrantLock());
         lock.lock();
         try {
             String key = account.getId().toString();
@@ -82,13 +100,12 @@ public class GmailClientFactory {
 
             if (now.isAfter(refreshThreshold)) {
                 log.debug("Access token for account {} is near expiry; refreshing", account.getId());
-                clientCache.remove(key);
-                OAuthTokenPair newTokens = refreshTokens(account);
-                clientCache.put(key, buildGmailClient(account, newTokens));
-                return clientCache.get(key);
+                clientCache.invalidate(key);
+                OAuthTokenPair newTokens = refreshAndPersistTokens(account);
+                return clientCache.get(key, k -> buildGmailClient(account, newTokens));
             }
 
-            return clientCache.computeIfAbsent(key, k -> buildGmailClient(account, tokens));
+            return clientCache.get(key, k -> buildGmailClient(account, tokens));
         } finally {
             lock.unlock();
         }
@@ -98,20 +115,26 @@ public class GmailClientFactory {
         OAuthTokenPair tokens = account.getOauthTokens();
         Instant refreshThreshold = tokens.tokenExpiry().minusSeconds(EXPIRY_BUFFER_SECONDS);
         if (Instant.now().isAfter(refreshThreshold)) {
-            return refreshTokens(account);
+            return refreshAndPersistTokens(account);
         }
         return tokens;
     }
 
-
     public void invalidateCache(UUID accountId) {
-        Gmail removed = clientCache.remove(accountId.toString());
-        if (removed != null) {
-            log.debug("Invalidated Gmail client cache for account {}", accountId);
-        }
+        clientCache.invalidate(accountId.toString());
+        accountLocks.invalidate(accountId);
+        log.debug("Invalidated Gmail client cache and locks for account {}", accountId);
     }
 
-    private OAuthTokenPair refreshTokens(EmailAccount account) {
+    private OAuthTokenPair refreshAndPersistTokens(EmailAccount account) {
+        OAuthTokenPair newTokens = doRefreshTokens(account);
+        account.updateTokens(newTokens);
+        accountRepository.save(account);
+        log.info("Refreshed and persisted access tokens for account {}", account.getId());
+        return newTokens;
+    }
+
+    private OAuthTokenPair doRefreshTokens(EmailAccount account) {
         String decryptedRefresh = encryptionPort.decrypt(account.getOauthTokens().encryptedRefreshToken());
 
         try {
@@ -135,7 +158,6 @@ public class GmailClientFactory {
             throw new TokenRefreshFailedException(account.getId(), e);
         }
     }
-
 
     private Gmail buildGmailClient(EmailAccount account, OAuthTokenPair tokens) {
         String decryptedAccess = encryptionPort.decrypt(tokens.encryptedAccessToken());

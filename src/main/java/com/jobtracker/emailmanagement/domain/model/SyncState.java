@@ -29,4 +29,8 @@ public record SyncState(
         Objects.requireNonNull(expiration, "expiration must not be null");
         return new SyncState(this.historyId, expiration, true);
     }
+
+    public SyncState withWatchStopped() {
+        return new SyncState(this.historyId, null, false);
+    }
 }

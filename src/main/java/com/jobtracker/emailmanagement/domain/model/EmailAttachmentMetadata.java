@@ -15,4 +15,8 @@ public record EmailAttachmentMetadata(
             throw new IllegalArgumentException("sizeBytes must be >= 0, got: " + sizeBytes);
         }
     }
+
+    public boolean hasAttachmentId() {
+        return gmailAttachmentId != null && !gmailAttachmentId.isBlank();
+    }
 }

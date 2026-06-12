@@ -27,6 +27,8 @@ public class EmailMessage {
 
     private       String  classification;        
     private       String  classificationResult;  
+    private       Double  classificationScore;
+    private       String  classificationConfidence;
     private       boolean processed;
     private       UUID    applicationThreadId;   
     private       Long    version;
@@ -38,7 +40,9 @@ public class EmailMessage {
             EmailDirection direction, Instant sentAt,
             String subject, String bodyText, String bodyHtml,
             List<EmailAttachmentMetadata> attachments,
-            String classification, String classificationResult, boolean processed,
+            String classification, String classificationResult,
+            Double classificationScore, String classificationConfidence,
+            boolean processed,
             UUID applicationThreadId, Long version) {
         this.id                   = Objects.requireNonNull(id);
         this.gmailMessageId       = Objects.requireNonNull(gmailMessageId);
@@ -57,6 +61,8 @@ public class EmailMessage {
                                         Objects.requireNonNull(attachments));
         this.classification       = classification;
         this.classificationResult = classificationResult;
+        this.classificationScore  = classificationScore;
+        this.classificationConfidence = classificationConfidence;
         this.processed            = processed;
         this.applicationThreadId  = applicationThreadId;
         this.version              = version;
@@ -73,22 +79,29 @@ public class EmailMessage {
                 id, gmailMessageId, gmailThreadId, emailAccountId,
                 sender, recipients, companyDomain, direction, sentAt,
                 subject, bodyText, bodyHtml, attachments,
-                null, null, false, null, null);
+                null, null, null, null, false, null, null);
     }
 
 
-    public void markClassified(String classificationEnumName, String serializedResult) {
+    public void markClassified(String classificationEnumName, String serializedResult,
+                               Double score, String confidence) {
         if (this.processed) {
             throw new IllegalStateException(
                     "EmailMessage " + id + " has already been processed — cannot re-classify.");
         }
-        this.classification       = Objects.requireNonNull(classificationEnumName);
-        this.classificationResult = serializedResult;
-        this.processed            = true;
+        this.classification           = Objects.requireNonNull(classificationEnumName);
+        this.classificationResult     = serializedResult;
+        this.classificationScore      = score;
+        this.classificationConfidence = confidence;
+        this.processed                = true;
     }
 
 
     public void linkToThread(UUID threadId) {
+        if (this.processed) {
+            throw new IllegalStateException(
+                    "Cannot link thread after processing: " + id);
+        }
         this.applicationThreadId = Objects.requireNonNull(threadId, "threadId must not be null");
     }
 
@@ -106,9 +119,11 @@ public class EmailMessage {
     public String       getBodyText()             { return bodyText; }
     public String       getBodyHtml()             { return bodyHtml; }
     public List<EmailAttachmentMetadata> getAttachments() { return attachments; }
-    public String       getClassification()       { return classification; }
-    public String       getClassificationResult() { return classificationResult; }
-    public boolean      isProcessed()             { return processed; }
-    public UUID         getApplicationThreadId()  { return applicationThreadId; }
-    public Long         getVersion()              { return version; }
+    public String       getClassification()           { return classification; }
+    public String       getClassificationResult()     { return classificationResult; }
+    public Double       getClassificationScore()      { return classificationScore; }
+    public String       getClassificationConfidence() { return classificationConfidence; }
+    public boolean      isProcessed()                 { return processed; }
+    public UUID         getApplicationThreadId()      { return applicationThreadId; }
+    public Long         getVersion()                  { return version; }
 }

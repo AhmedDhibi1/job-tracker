@@ -27,7 +27,7 @@ public class EmailAttachmentMetadataJpaEntity {
     @Column(name = "size_bytes", nullable = false)
     private long sizeBytes;
 
-    @Column(name = "gmail_attachment_id", nullable = false, length = 100)
+    @Column(name = "gmail_attachment_id", nullable = true, length = 100)
     private String gmailAttachmentId;
 
     public UUID getId() { return id; }

@@ -1,8 +1,10 @@
 package com.jobtracker.emailmanagement.infrastructure.gmail;
 
+import com.jobtracker.emailmanagement.application.dto.EmailHistoryDelta;
+import com.jobtracker.emailmanagement.application.dto.FetchedEmailData;
+import com.jobtracker.emailmanagement.application.dto.HistoryDeltaResult;
 import com.jobtracker.emailmanagement.application.port.outbound.GmailProviderPort;
 import com.jobtracker.emailmanagement.domain.model.EmailAccount;
-import com.jobtracker.emailmanagement.infrastructure.gmail.model.GmailHistoryRecord;
 import com.jobtracker.emailmanagement.infrastructure.gmail.model.RawGmailMessage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -11,14 +13,6 @@ import org.springframework.stereotype.Component;
 import java.time.Instant;
 import java.util.List;
 
-/**
- * Adapter that implements {@link GmailProviderPort} by delegating to the
- * specialized Gmail infrastructure components.
- *
- * <p>This is the single implementation of the {@code GmailProviderPort} outbound
- * port. It acts as a facade over {@link GmailMessageFetcher},
- * {@link GmailHistoryFetcher}, and {@link GmailPushSubscriptionManager}.</p>
- */
 @Component
 public class GmailApiAdapter implements GmailProviderPort {
 
@@ -37,15 +31,20 @@ public class GmailApiAdapter implements GmailProviderPort {
     }
 
     @Override
-    public RawGmailMessage fetchMessage(EmailAccount account, String gmailMessageId) {
+    public FetchedEmailData fetchMessage(EmailAccount account, String gmailMessageId) {
         log.debug("Fetching message {} for account {}", gmailMessageId, account.getId());
-        return messageFetcher.fetch(account, gmailMessageId);
+        RawGmailMessage raw = messageFetcher.fetch(account, gmailMessageId);
+        return toFetchedEmailData(raw);
     }
 
     @Override
-    public List<GmailHistoryRecord> fetchHistoryDelta(EmailAccount account, String fromHistoryId) {
+    public HistoryDeltaResult fetchHistoryDelta(EmailAccount account, String fromHistoryId) {
         log.debug("Fetching history delta for account {} from historyId {}", account.getId(), fromHistoryId);
-        return historyFetcher.fetchDelta(account, fromHistoryId);
+        var infraResult = historyFetcher.fetchDelta(account, fromHistoryId);
+        List<EmailHistoryDelta> records = infraResult.records().stream()
+                .map(r -> new EmailHistoryDelta(r.newHistoryId(), r.addedMessageIds()))
+                .toList();
+        return new HistoryDeltaResult(records, infraResult.latestHistoryId());
     }
 
     @Override
@@ -64,5 +63,28 @@ public class GmailApiAdapter implements GmailProviderPort {
     public WatchResult renewWatch(EmailAccount account) {
         log.info("Renewing Gmail watch for account {}", account.getId());
         return pushManager.renewWatch(account);
+    }
+
+    private static FetchedEmailData toFetchedEmailData(RawGmailMessage raw) {
+        List<FetchedEmailData.AttachmentPart> parts = raw.parts() == null ? List.of()
+                : raw.parts().stream()
+                    .map(p -> new FetchedEmailData.AttachmentPart(
+                            p.mimeType(), p.contentDisposition(), p.filename(),
+                            p.body(), p.gmailAttachmentId(), p.sizeBytes()))
+                    .toList();
+
+        return new FetchedEmailData(
+                raw.gmailMessageId(),
+                raw.gmailThreadId(),
+                raw.headers(),
+                parts,
+                raw.sentAt(),
+                raw.from(),
+                raw.to(),
+                raw.subject(),
+                raw.bodyText(),
+                raw.bodyHtml(),
+                raw.accountEmailAddresses()
+        );
     }
 }

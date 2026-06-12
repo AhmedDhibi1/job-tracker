@@ -4,17 +4,20 @@ import com.jobtracker.emailmanagement.application.command.RegisterEmailAccountCo
 import com.jobtracker.emailmanagement.application.port.inbound.DeactivateEmailAccountUseCase;
 import com.jobtracker.emailmanagement.application.port.inbound.RegisterEmailAccountUseCase;
 import com.jobtracker.emailmanagement.application.port.outbound.EmailAccountRepository;
-import com.jobtracker.emailmanagement.application.port.outbound.EmailEncryptionPort;
+import com.jobtracker.emailmanagement.application.port.outbound.PushSubscriptionPort;
 import com.jobtracker.emailmanagement.domain.event.EmailAccountDeactivatedEvent;
 import com.jobtracker.emailmanagement.domain.event.EmailAccountRegisteredEvent;
 import com.jobtracker.emailmanagement.domain.exception.DuplicateEmailAccountException;
 import com.jobtracker.emailmanagement.domain.model.EmailAccount;
 import com.jobtracker.emailmanagement.domain.model.OAuthTokenPair;
-import com.jobtracker.emailmanagement.infrastructure.gmail.GmailPushSubscriptionManager;
+import com.jobtracker.shared.CorrelationIdHolder;
+import com.jobtracker.shared.application.exception.ConcurrentModificationException;
 import com.jobtracker.shared.application.exception.EntityNotFoundException;
 import com.jobtracker.shared.application.port.outbound.ApplicationEventPublisherPort;
 import com.jobtracker.shared.domain.valueobject.EmailAddress;
-import org.slf4j.MDC;
+import jakarta.persistence.OptimisticLockException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.util.UUID;
@@ -23,20 +26,19 @@ import java.util.UUID;
 public class EmailAccountApplicationService
         implements RegisterEmailAccountUseCase, DeactivateEmailAccountUseCase {
 
+    private static final Logger log = LoggerFactory.getLogger(EmailAccountApplicationService.class);
+
     private final EmailAccountRepository       accountRepository;
-    private final EmailEncryptionPort          encryptionPort;
+    private final PushSubscriptionPort         pushSubscriptionPort;
     private final ApplicationEventPublisherPort eventPublisher;
-    private final GmailPushSubscriptionManager pushSubscriptionManager;
 
     public EmailAccountApplicationService(
             EmailAccountRepository accountRepository,
-            EmailEncryptionPort encryptionPort,
-            ApplicationEventPublisherPort eventPublisher,
-            GmailPushSubscriptionManager pushSubscriptionManager) {
-        this.accountRepository = accountRepository;
-        this.encryptionPort    = encryptionPort;
-        this.eventPublisher    = eventPublisher;
-        this.pushSubscriptionManager = pushSubscriptionManager;
+            PushSubscriptionPort pushSubscriptionPort,
+            ApplicationEventPublisherPort eventPublisher) {
+        this.accountRepository     = accountRepository;
+        this.pushSubscriptionPort  = pushSubscriptionPort;
+        this.eventPublisher        = eventPublisher;
     }
 
     @Override
@@ -57,11 +59,8 @@ public class EmailAccountApplicationService
                     });
         }
 
-        String encryptedAccess  = encryptionPort.encrypt(command.rawAccessToken());
-        String encryptedRefresh = encryptionPort.encrypt(command.rawRefreshToken());
-
         OAuthTokenPair tokens = new OAuthTokenPair(
-                encryptedAccess, encryptedRefresh, command.tokenExpiry());
+                command.encryptedAccessToken(), command.encryptedRefreshToken(), command.tokenExpiry());
 
         EmailAccount account = EmailAccount.create(
                 UUID.randomUUID(), emailAddress,
@@ -70,7 +69,7 @@ public class EmailAccountApplicationService
         accountRepository.save(account);
 
         eventPublisher.publish(new EmailAccountRegisteredEvent(
-                account.getId(), emailAddress, correlationId()));
+                account.getId(), emailAddress, CorrelationIdHolder.current()));
 
         return account.getId();
     }
@@ -78,20 +77,22 @@ public class EmailAccountApplicationService
     @Override
     @Transactional
     public void deactivate(UUID accountId, String reason) {
-        EmailAccount account = accountRepository.findById(accountId)
-                .orElseThrow(() -> new EntityNotFoundException(EmailAccount.class, accountId));
+        try {
+            EmailAccount account = accountRepository.findById(accountId)
+                    .orElseThrow(() -> new EntityNotFoundException(EmailAccount.class, accountId));
 
-        account.deactivate();
-        accountRepository.save(account);
+            account.deactivate();
+            account.updateSyncState(account.getSyncState().withWatchStopped());
+            accountRepository.save(account);
 
-        pushSubscriptionManager.stopWatch(account);
+            pushSubscriptionPort.stopWatch(account);
 
-        eventPublisher.publish(new EmailAccountDeactivatedEvent(
-                accountId, account.getEmailAddress(), reason, correlationId()));
-    }
+            eventPublisher.publish(new EmailAccountDeactivatedEvent(
+                    accountId, account.getEmailAddress(), reason, CorrelationIdHolder.current()));
 
-    private static String correlationId() {
-        String mdc = MDC.get("correlationId");
-        return mdc != null ? mdc : UUID.randomUUID().toString();
+        } catch (OptimisticLockException e) {
+            log.warn("Concurrent modification of account {}", accountId);
+            throw new ConcurrentModificationException("EmailAccount", accountId.toString(), e);
+        }
     }
 }

@@ -9,7 +9,6 @@ import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Set;
 
 @Component
 public class EmailMessagePersistenceMapper {
@@ -27,7 +26,7 @@ public class EmailMessagePersistenceMapper {
                 ? EmailDirection.valueOf(entity.getDirection())
                 : null;
 
-        EmailMessage message = new EmailMessage(
+        return new EmailMessage(
                 entity.getId(),
                 entity.getGmailMessageId(),
                 entity.getGmailThreadId(),
@@ -43,16 +42,12 @@ public class EmailMessagePersistenceMapper {
                 attachments,
                 entity.getClassification(),
                 entity.getClassificationConfidence(),
+                entity.getClassificationScore(),
+                entity.getClassificationConfidence(),
                 entity.isProcessed(),
                 entity.getApplicationThreadId(),
                 entity.getVersion()
         );
-
-        if (entity.getApplicationThreadId() != null) {
-            message.linkToThread(entity.getApplicationThreadId());
-        }
-
-        return message;
     }
 
     public EmailMessageJpaEntity toEntity(EmailMessage domain) {
@@ -74,7 +69,8 @@ public class EmailMessagePersistenceMapper {
 
         if (domain.getClassification() != null) {
             entity.setClassification(domain.getClassification());
-            entity.setClassificationConfidence(domain.getClassificationResult());
+            entity.setClassificationScore(domain.getClassificationScore());
+            entity.setClassificationConfidence(domain.getClassificationConfidence());
             entity.setMatchedRuleName(null);
             entity.setMatchedEvidence(new ArrayList<>());
         }

@@ -7,9 +7,7 @@ import java.time.Instant;
 import java.util.UUID;
 
 @Entity
-@Table(name = "email_accounts", indexes = {
-    @Index(name = "idx_email_account_active", columnList = "active")
-})
+@Table(name = "email_accounts")
 public class EmailAccountJpaEntity {
 
     @Id
@@ -20,7 +18,7 @@ public class EmailAccountJpaEntity {
     @Column(name = "email_address", nullable = false, unique = true, length = 320)
     private String emailAddress;
 
-    @Column(name = "display_name", nullable = false, length = 200)
+    @Column(name = "display_name", nullable = false, length = 255)
     private String displayName;
 
     @Column(name = "is_primary", nullable = false)
@@ -32,8 +30,8 @@ public class EmailAccountJpaEntity {
     @Column(name = "encrypted_refresh_token", nullable = false, length = 2000)
     private String encryptedRefreshToken;
 
-    @Column(name = "token_expires_at", nullable = false)
-    private Instant tokenExpiresAt;
+    @Column(name = "token_expiry", nullable = false)
+    private Instant tokenExpiry;
 
     @Column(name = "history_id", length = 100)
     private String historyId;
@@ -54,7 +52,6 @@ public class EmailAccountJpaEntity {
     @Column(name = "version", nullable = false)
     private long version;
 
-    // Getters and setters required by JPA
     public UUID getId() { return id; }
     public void setId(UUID id) { this.id = id; }
     public String getEmailAddress() { return emailAddress; }
@@ -67,8 +64,8 @@ public class EmailAccountJpaEntity {
     public void setEncryptedAccessToken(String encryptedAccessToken) { this.encryptedAccessToken = encryptedAccessToken; }
     public String getEncryptedRefreshToken() { return encryptedRefreshToken; }
     public void setEncryptedRefreshToken(String encryptedRefreshToken) { this.encryptedRefreshToken = encryptedRefreshToken; }
-    public Instant getTokenExpiresAt() { return tokenExpiresAt; }
-    public void setTokenExpiresAt(Instant tokenExpiresAt) { this.tokenExpiresAt = tokenExpiresAt; }
+    public Instant getTokenExpiry() { return tokenExpiry; }
+    public void setTokenExpiry(Instant tokenExpiry) { this.tokenExpiry = tokenExpiry; }
     public String getHistoryId() { return historyId; }
     public void setHistoryId(String historyId) { this.historyId = historyId; }
     public Instant getWatchExpiration() { return watchExpiration; }

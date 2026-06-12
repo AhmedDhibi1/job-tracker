@@ -17,8 +17,9 @@ import org.springframework.stereotype.Component;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
-import java.time.format.DateTimeFormatter;
 import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -26,7 +27,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
-
 
 @Component
 public class GmailMessageFetcher {
@@ -42,9 +42,13 @@ public class GmailMessageFetcher {
     private static final String MIME_TYPE_TEXT_HTML = "text/html";
     private static final String MIME_TYPE_MULTIPART = "multipart/";
 
-    private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter
-            .ofPattern("EEE, dd MMM yyyy HH:mm:ss Z")
-            .withLocale(Locale.ENGLISH);
+    private static final DateTimeFormatter[] DATE_FORMATTERS = {
+        DateTimeFormatter.ofPattern("EEE, dd MMM yyyy HH:mm:ss Z", Locale.ENGLISH),
+        DateTimeFormatter.ofPattern("dd MMM yyyy HH:mm:ss Z", Locale.ENGLISH),
+        DateTimeFormatter.ofPattern("EEE, dd MMM yyyy HH:mm:ss ZZ", Locale.ENGLISH),
+        DateTimeFormatter.RFC_1123_DATE_TIME.withLocale(Locale.ENGLISH),
+        DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.ENGLISH),
+    };
 
     private final GmailClientFactory clientFactory;
 
@@ -202,16 +206,21 @@ public class GmailMessageFetcher {
 
     private Instant parseDateHeader(Message message, String dateHeader) {
         if (dateHeader != null) {
-            try {
-                return ZonedDateTime.parse(dateHeader.trim(), DATE_FORMATTER).toInstant();
-            } catch (Exception e) {
-                log.warn("Failed to parse date header '{}', falling back to internalDate", dateHeader);
+            for (DateTimeFormatter formatter : DATE_FORMATTERS) {
+                try {
+                    return ZonedDateTime.parse(dateHeader.trim(), formatter).toInstant();
+                } catch (DateTimeParseException e) {
+                    // Try next formatter
+                }
             }
+            log.warn("All date formatters failed for '{}', falling back to internalDate", dateHeader);
         }
         if (message.getInternalDate() != null) {
+            log.debug("Using internalDate fallback for message {}", message.getId());
             return Instant.ofEpochMilli(message.getInternalDate());
         }
-        return Instant.now();
+        log.warn("No date header or internalDate available for message {}, using Instant.EPOCH", message.getId());
+        return Instant.EPOCH;
     }
 
     private List<MessagePart> flattenParts(MessagePart root) {

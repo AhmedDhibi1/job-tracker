@@ -2,6 +2,8 @@ package com.jobtracker.emailmanagement.application.service;
 
 import com.jobtracker.emailmanagement.application.command.IngestEmailCommand;
 import com.jobtracker.emailmanagement.application.command.InitialSyncCommand;
+import com.jobtracker.emailmanagement.application.dto.FetchedEmailData;
+import com.jobtracker.emailmanagement.application.dto.HistoryDeltaResult;
 import com.jobtracker.emailmanagement.application.port.inbound.IngestEmailUseCase;
 import com.jobtracker.emailmanagement.application.port.inbound.InitialSyncUseCase;
 import com.jobtracker.emailmanagement.application.port.outbound.EmailAccountRepository;
@@ -11,13 +13,11 @@ import com.jobtracker.emailmanagement.domain.event.EmailIngestedEvent;
 import com.jobtracker.emailmanagement.domain.model.EmailAccount;
 import com.jobtracker.emailmanagement.domain.model.EmailMessage;
 import com.jobtracker.emailmanagement.domain.service.EmailParserDomainService;
-import com.jobtracker.emailmanagement.infrastructure.gmail.model.GmailHistoryRecord;
-import com.jobtracker.emailmanagement.infrastructure.gmail.model.RawGmailMessage;
+import com.jobtracker.shared.CorrelationIdHolder;
 import com.jobtracker.shared.application.exception.EntityNotFoundException;
 import com.jobtracker.shared.application.port.outbound.ApplicationEventPublisherPort;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.slf4j.MDC;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -52,9 +52,13 @@ public class EmailIngestionApplicationService
         this.eventPublisher    = eventPublisher;
     }
 
-    @Override
     @Transactional(propagation = Propagation.REQUIRES_NEW)
+    @Override
     public EmailMessage ingest(IngestEmailCommand command) {
+        return ingestInternal(command);
+    }
+
+    private EmailMessage ingestInternal(IngestEmailCommand command) {
         if (messageRepository.existsByGmailMessageId(command.gmailMessageId())) {
             return messageRepository.findByGmailMessageId(command.gmailMessageId())
                     .orElseThrow(() -> new IllegalStateException(
@@ -69,7 +73,7 @@ public class EmailIngestionApplicationService
             throw new IllegalStateException("Cannot ingest email for deactivated account: " + account.getId());
         }
 
-        RawGmailMessage rawMessage = gmailProvider.fetchMessage(account, command.gmailMessageId());
+        FetchedEmailData rawMessage = gmailProvider.fetchMessage(account, command.gmailMessageId());
 
         EmailMessage emailMessage = emailParser.parse(
                 rawMessage, account.getId(), account.getEmailAddress());
@@ -80,13 +84,12 @@ public class EmailIngestionApplicationService
                 emailMessage.getId(),
                 emailMessage.getGmailMessageId(),
                 account.getId(),
-                correlationId()));
+                resolveCorrelationId(command)));
 
         return emailMessage;
     }
 
     @Override
-    @Transactional
     public int sync(InitialSyncCommand command) {
         EmailAccount account = accountRepository.findById(command.emailAccountId())
                 .orElseThrow(() -> new EntityNotFoundException(
@@ -99,23 +102,25 @@ public class EmailIngestionApplicationService
             Instant afterDate = Instant.now().minus(command.daysBack(), ChronoUnit.DAYS);
             messageIds = gmailProvider.listMessageIdsSince(account, afterDate);
         } else {
-            List<GmailHistoryRecord> records = gmailProvider.fetchHistoryDelta(
+            HistoryDeltaResult deltaResult = gmailProvider.fetchHistoryDelta(
                     account, account.getSyncState().historyId());
-            messageIds = records.stream()
+            messageIds = deltaResult.records().stream()
                     .flatMap(r -> r.addedMessageIds().stream())
                     .distinct()
                     .toList();
-            if (!records.isEmpty()) {
-                latestHistoryId = records.getLast().newHistoryId();
-            }
+            latestHistoryId = deltaResult.latestHistoryId();
         }
 
         List<String> failedIds = new ArrayList<>();
+        List<String> successfulIds = new ArrayList<>();
         int count = 0;
+
         for (String gmailMessageId : messageIds) {
             try {
-                ingest(new IngestEmailCommand(
-                        command.emailAccountId(), gmailMessageId, correlationId()));
+                IngestEmailCommand ingestCmd = new IngestEmailCommand(
+                        command.emailAccountId(), gmailMessageId, CorrelationIdHolder.current());
+                ingest(ingestCmd);
+                successfulIds.add(gmailMessageId);
                 count++;
             } catch (Exception e) {
                 log.error("Failed to ingest message {} for account {}: {}",
@@ -125,11 +130,11 @@ public class EmailIngestionApplicationService
         }
 
         if (!failedIds.isEmpty()) {
-            log.warn("{} messages failed during sync for account {}",
-                    failedIds.size(), command.emailAccountId());
+            log.warn("{}/{} messages failed during sync for account {}",
+                    failedIds.size(), failedIds.size() + successfulIds.size(), command.emailAccountId());
         }
 
-        if (latestHistoryId != null) {
+        if (latestHistoryId != null && !successfulIds.isEmpty()) {
             account.updateSyncState(account.getSyncState().withUpdatedHistoryId(latestHistoryId));
             accountRepository.save(account);
         }
@@ -137,8 +142,10 @@ public class EmailIngestionApplicationService
         return count;
     }
 
-    private static String correlationId() {
-        String mdc = MDC.get("correlationId");
-        return mdc != null ? mdc : UUID.randomUUID().toString();
+    private static String resolveCorrelationId(IngestEmailCommand command) {
+        if (command.correlationId() != null && !command.correlationId().isBlank()) {
+            return command.correlationId();
+        }
+        return CorrelationIdHolder.current();
     }
 }

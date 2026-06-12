@@ -1,9 +1,9 @@
 package com.jobtracker.emailmanagement.domain.service;
 
+import com.jobtracker.emailmanagement.application.dto.FetchedEmailData;
 import com.jobtracker.emailmanagement.domain.model.EmailAttachmentMetadata;
 import com.jobtracker.emailmanagement.domain.model.EmailDirection;
 import com.jobtracker.emailmanagement.domain.model.EmailMessage;
-import com.jobtracker.emailmanagement.infrastructure.gmail.model.RawGmailMessage;
 import com.jobtracker.shared.domain.valueobject.CompanyDomain;
 import com.jobtracker.shared.domain.valueobject.EmailAddress;
 import jakarta.mail.Address;
@@ -17,18 +17,18 @@ import java.util.UUID;
 public class EmailParserDomainService {
 
     public EmailMessage parse(
-            RawGmailMessage raw,
+            FetchedEmailData raw,
             UUID emailAccountId,
             EmailAddress accountAddress) {
 
-        EmailAddress sender     = extractSender(raw);
-        var recipients          = extractRecipients(raw);
-        EmailDirection direction = determineDirection(sender, accountAddress);
-        CompanyDomain companyDomain = deriveCompanyDomain(sender, recipients, direction, accountAddress);
-        String subject  = extractHeader(raw, "Subject");
-        String bodyText = extractBodyText(raw);
-        String bodyHtml = extractBodyHtml(raw);
-        var attachments = extractAttachments(raw);
+        EmailAddress sender            = extractSender(raw);
+        List<EmailAddress> recipients  = extractRecipients(raw);
+        EmailDirection direction       = determineDirection(sender, accountAddress);
+        CompanyDomain companyDomain    = deriveCompanyDomain(sender, recipients, direction, accountAddress);
+        String subject                 = extractHeader(raw, "Subject");
+        String bodyText                = extractBodyText(raw);
+        String bodyHtml                = extractBodyHtml(raw);
+        List<EmailAttachmentMetadata> attachments = extractAttachments(raw);
 
         return EmailMessage.create(
                 UUID.randomUUID(),
@@ -41,7 +41,7 @@ public class EmailParserDomainService {
     }
 
 
-    private EmailAddress extractSender(RawGmailMessage raw) {
+    private EmailAddress extractSender(FetchedEmailData raw) {
         String fromHeader = raw.headers().get("from");
         if (fromHeader == null || fromHeader.isBlank()) {
             throw new IllegalArgumentException("Missing 'from' header in message " + raw.gmailMessageId());
@@ -54,7 +54,7 @@ public class EmailParserDomainService {
         }
     }
 
-    private List<EmailAddress> extractRecipients(RawGmailMessage raw) {
+    private List<EmailAddress> extractRecipients(FetchedEmailData raw) {
         List<EmailAddress> recipients = new ArrayList<>();
         for (String header : List.of("to", "cc", "bcc")) {
             String value = raw.headers().get(header);
@@ -79,15 +79,15 @@ public class EmailParserDomainService {
         return recipients;
     }
 
-    private String extractHeader(RawGmailMessage raw, String headerName) {
+    private String extractHeader(FetchedEmailData raw, String headerName) {
         return raw.headers().getOrDefault(headerName.toLowerCase(), "");
     }
 
-    private String extractBodyText(RawGmailMessage raw) {
+    private String extractBodyText(FetchedEmailData raw) {
         if (raw.bodyText() != null && !raw.bodyText().isBlank()) {
             return raw.bodyText();
         }
-        for (RawGmailMessage.MimePart part : raw.parts()) {
+        for (FetchedEmailData.AttachmentPart part : raw.attachments()) {
             if ("text/plain".equalsIgnoreCase(part.mimeType()) && part.body() != null) {
                 return part.body();
             }
@@ -95,11 +95,11 @@ public class EmailParserDomainService {
         return "";
     }
 
-    private String extractBodyHtml(RawGmailMessage raw) {
+    private String extractBodyHtml(FetchedEmailData raw) {
         if (raw.bodyHtml() != null && !raw.bodyHtml().isBlank()) {
             return raw.bodyHtml();
         }
-        for (RawGmailMessage.MimePart part : raw.parts()) {
+        for (FetchedEmailData.AttachmentPart part : raw.attachments()) {
             if ("text/html".equalsIgnoreCase(part.mimeType()) && part.body() != null) {
                 return part.body();
             }
@@ -107,9 +107,9 @@ public class EmailParserDomainService {
         return "";
     }
 
-    private List<EmailAttachmentMetadata> extractAttachments(RawGmailMessage raw) {
+    private List<EmailAttachmentMetadata> extractAttachments(FetchedEmailData raw) {
         List<EmailAttachmentMetadata> attachments = new ArrayList<>();
-        for (RawGmailMessage.MimePart part : raw.parts()) {
+        for (FetchedEmailData.AttachmentPart part : raw.attachments()) {
             if (part.isAttachment()) {
                 attachments.add(new EmailAttachmentMetadata(
                         part.filename(),

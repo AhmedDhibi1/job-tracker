@@ -11,5 +11,8 @@ public record IngestEmailCommand(
         Objects.requireNonNull(emailAccountId, "emailAccountId must not be null");
         Objects.requireNonNull(gmailMessageId, "gmailMessageId must not be null");
         if (gmailMessageId.isBlank()) throw new IllegalArgumentException("gmailMessageId must not be blank");
+        if (correlationId != null && correlationId.isBlank()) {
+            throw new IllegalArgumentException("correlationId must not be blank if provided");
+        }
     }
 }

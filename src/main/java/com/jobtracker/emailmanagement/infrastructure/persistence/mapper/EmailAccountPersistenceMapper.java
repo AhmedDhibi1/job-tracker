@@ -14,7 +14,7 @@ public class EmailAccountPersistenceMapper {
         OAuthTokenPair tokens = new OAuthTokenPair(
                 entity.getEncryptedAccessToken(),
                 entity.getEncryptedRefreshToken(),
-                entity.getTokenExpiresAt()
+                entity.getTokenExpiry()
         );
 
         SyncState syncState = new SyncState(
@@ -44,7 +44,7 @@ public class EmailAccountPersistenceMapper {
         entity.setPrimary(domain.isPrimary());
         entity.setEncryptedAccessToken(domain.getOauthTokens().encryptedAccessToken());
         entity.setEncryptedRefreshToken(domain.getOauthTokens().encryptedRefreshToken());
-        entity.setTokenExpiresAt(domain.getOauthTokens().tokenExpiry());
+        entity.setTokenExpiry(domain.getOauthTokens().tokenExpiry());
         entity.setHistoryId(domain.getSyncState().historyId());
         entity.setWatchExpiration(domain.getSyncState().watchExpiration());
         entity.setPushEnabled(domain.getSyncState().pushEnabled());
