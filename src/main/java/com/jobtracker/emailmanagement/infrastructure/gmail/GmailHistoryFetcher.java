@@ -86,11 +86,11 @@ public class GmailHistoryFetcher {
             return new HistoryDeltaInfraResult(records, latestHistoryId);
 
         } catch (IOException e) {
-            log.error("Failed to fetch history delta for account {}: {}", account.getId(), e.getMessage());
-            throw new RuntimeException("Gmail history fetch failed: " + e.getMessage(), e);
+            log.error("Failed to fetch history delta for account {}", account.getId(), e);
+            throw new GmailApiException("Gmail history fetch failed", e,
+                    account.getId().toString(), GmailApiException.Operation.FETCH_HISTORY);
         }
     }
-
 
     private List<String> extractAddedMessageIds(History history) {
         List<String> ids = new ArrayList<>();

@@ -48,25 +48,20 @@ public class EmailMessageJpaEntity {
     @Column(name = "company_domain", nullable = false, length = 253)
     private String companyDomain;
 
-    @Column(name = "direction", nullable = false, length = 20)
+    @Column(name = "direction", nullable = false, length = 32)
     private String direction;
 
     @Column(name = "classification", length = 30)
     private String classification;
 
-    @Column(name = "classification_score")
+    @Column(name = "classification_result", columnDefinition = "TEXT")
+    private String classificationResult;
+
+    @Column(name = "confidence_score", precision = 5, scale = 4)
     private Double classificationScore;
 
     @Column(name = "classification_confidence", length = 10)
     private String classificationConfidence;
-
-    @Column(name = "matched_rule_name", length = 100)
-    private String matchedRuleName;
-
-    @ElementCollection
-    @CollectionTable(name = "email_message_evidence", joinColumns = @JoinColumn(name = "email_message_id"))
-    @Column(name = "evidence_keyword", length = 100)
-    private List<String> matchedEvidence = new ArrayList<>();
 
     @Column(name = "processed", nullable = false)
     private boolean processed;
@@ -110,14 +105,12 @@ public class EmailMessageJpaEntity {
     public void setDirection(String direction) { this.direction = direction; }
     public String getClassification() { return classification; }
     public void setClassification(String classification) { this.classification = classification; }
+    public String getClassificationResult() { return classificationResult; }
+    public void setClassificationResult(String classificationResult) { this.classificationResult = classificationResult; }
     public Double getClassificationScore() { return classificationScore; }
     public void setClassificationScore(Double classificationScore) { this.classificationScore = classificationScore; }
     public String getClassificationConfidence() { return classificationConfidence; }
     public void setClassificationConfidence(String classificationConfidence) { this.classificationConfidence = classificationConfidence; }
-    public String getMatchedRuleName() { return matchedRuleName; }
-    public void setMatchedRuleName(String matchedRuleName) { this.matchedRuleName = matchedRuleName; }
-    public List<String> getMatchedEvidence() { return matchedEvidence; }
-    public void setMatchedEvidence(List<String> matchedEvidence) { this.matchedEvidence = matchedEvidence; }
     public boolean isProcessed() { return processed; }
     public void setProcessed(boolean processed) { this.processed = processed; }
     public Instant getSentAt() { return sentAt; }

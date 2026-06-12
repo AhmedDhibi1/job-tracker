@@ -13,6 +13,9 @@ public record OAuthTokenPair(
         Objects.requireNonNull(encryptedAccessToken,  "encryptedAccessToken must not be null");
         Objects.requireNonNull(encryptedRefreshToken, "encryptedRefreshToken must not be null");
         Objects.requireNonNull(tokenExpiry,           "tokenExpiry must not be null");
+        if (tokenExpiry.isBefore(Instant.now())) {
+            throw new IllegalArgumentException("tokenExpiry must be in the future");
+        }
     }
 
     public boolean isExpired(Instant now) {

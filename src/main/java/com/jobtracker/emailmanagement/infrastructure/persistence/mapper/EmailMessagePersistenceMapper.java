@@ -26,28 +26,35 @@ public class EmailMessagePersistenceMapper {
                 ? EmailDirection.valueOf(entity.getDirection())
                 : null;
 
-        return new EmailMessage(
-                entity.getId(),
-                entity.getGmailMessageId(),
-                entity.getGmailThreadId(),
-                entity.getEmailAccountId(),
-                new EmailAddress(entity.getSenderEmail()),
-                recipients,
-                new CompanyDomain(entity.getCompanyDomain()),
-                direction,
-                entity.getSentAt(),
-                entity.getSubject(),
-                entity.getBodyText(),
-                entity.getBodyHtml(),
-                attachments,
-                entity.getClassification(),
-                entity.getClassificationConfidence(),
-                entity.getClassificationScore(),
-                entity.getClassificationConfidence(),
-                entity.isProcessed(),
-                entity.getApplicationThreadId(),
-                entity.getVersion()
-        );
+        ClassificationResult classificationResult = null;
+        if (entity.getClassification() != null) {
+            classificationResult = new ClassificationResult(
+                    entity.getClassification(),
+                    entity.getClassificationResult(),
+                    entity.getClassificationScore(),
+                    entity.getClassificationConfidence()
+            );
+        }
+
+        return new EmailMessage.Builder()
+                .id(entity.getId())
+                .gmailMessageId(entity.getGmailMessageId())
+                .gmailThreadId(entity.getGmailThreadId())
+                .emailAccountId(entity.getEmailAccountId())
+                .sender(new EmailAddress(entity.getSenderEmail()))
+                .recipients(recipients)
+                .companyDomain(new CompanyDomain(entity.getCompanyDomain()))
+                .direction(direction)
+                .sentAt(entity.getSentAt())
+                .subject(entity.getSubject())
+                .bodyText(entity.getBodyText())
+                .bodyHtml(entity.getBodyHtml())
+                .attachments(attachments)
+                .classificationResult(classificationResult)
+                .processed(entity.isProcessed())
+                .applicationThreadId(entity.getApplicationThreadId())
+                .version(entity.getVersion())
+                .build();
     }
 
     public EmailMessageJpaEntity toEntity(EmailMessage domain) {
@@ -69,10 +76,9 @@ public class EmailMessagePersistenceMapper {
 
         if (domain.getClassification() != null) {
             entity.setClassification(domain.getClassification());
+            entity.setClassificationResult(domain.getClassificationResult());
             entity.setClassificationScore(domain.getClassificationScore());
             entity.setClassificationConfidence(domain.getClassificationConfidence());
-            entity.setMatchedRuleName(null);
-            entity.setMatchedEvidence(new ArrayList<>());
         }
 
         entity.setAttachments(domain.getAttachments().stream().map(this::toAttachmentEntity).toList());

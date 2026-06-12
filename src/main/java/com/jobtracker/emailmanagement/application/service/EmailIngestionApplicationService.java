@@ -2,30 +2,24 @@ package com.jobtracker.emailmanagement.application.service;
 
 import com.jobtracker.emailmanagement.application.command.IngestEmailCommand;
 import com.jobtracker.emailmanagement.application.command.InitialSyncCommand;
-import com.jobtracker.emailmanagement.application.dto.FetchedEmailData;
 import com.jobtracker.emailmanagement.application.dto.HistoryDeltaResult;
 import com.jobtracker.emailmanagement.application.port.inbound.IngestEmailUseCase;
 import com.jobtracker.emailmanagement.application.port.inbound.InitialSyncUseCase;
 import com.jobtracker.emailmanagement.application.port.outbound.EmailAccountRepository;
-import com.jobtracker.emailmanagement.application.port.outbound.EmailMessageRepository;
 import com.jobtracker.emailmanagement.application.port.outbound.GmailProviderPort;
-import com.jobtracker.emailmanagement.domain.event.EmailIngestedEvent;
 import com.jobtracker.emailmanagement.domain.model.EmailAccount;
-import com.jobtracker.emailmanagement.domain.model.EmailMessage;
-import com.jobtracker.emailmanagement.domain.service.EmailParserDomainService;
 import com.jobtracker.shared.CorrelationIdHolder;
 import com.jobtracker.shared.application.exception.EntityNotFoundException;
-import com.jobtracker.shared.application.port.outbound.ApplicationEventPublisherPort;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.UUID;
 
 @Service
 public class EmailIngestionApplicationService
@@ -34,66 +28,32 @@ public class EmailIngestionApplicationService
     private static final Logger log = LoggerFactory.getLogger(EmailIngestionApplicationService.class);
 
     private final EmailAccountRepository       accountRepository;
-    private final EmailMessageRepository       messageRepository;
     private final GmailProviderPort            gmailProvider;
-    private final EmailParserDomainService     emailParser;
-    private final ApplicationEventPublisherPort eventPublisher;
+    private final SingleMessageIngestionHandler ingestionHandler;
 
     public EmailIngestionApplicationService(
             EmailAccountRepository accountRepository,
-            EmailMessageRepository messageRepository,
             GmailProviderPort gmailProvider,
-            EmailParserDomainService emailParser,
-            ApplicationEventPublisherPort eventPublisher) {
+            SingleMessageIngestionHandler ingestionHandler) {
         this.accountRepository = accountRepository;
-        this.messageRepository = messageRepository;
         this.gmailProvider     = gmailProvider;
-        this.emailParser       = emailParser;
-        this.eventPublisher    = eventPublisher;
+        this.ingestionHandler  = ingestionHandler;
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     @Override
     public EmailMessage ingest(IngestEmailCommand command) {
-        return ingestInternal(command);
+        return ingestionHandler.ingest(command);
     }
 
-    private EmailMessage ingestInternal(IngestEmailCommand command) {
-        if (messageRepository.existsByGmailMessageId(command.gmailMessageId())) {
-            return messageRepository.findByGmailMessageId(command.gmailMessageId())
-                    .orElseThrow(() -> new IllegalStateException(
-                            "Message exists but cannot be retrieved: " + command.gmailMessageId()));
-        }
-
-        EmailAccount account = accountRepository.findById(command.emailAccountId())
-                .orElseThrow(() -> new EntityNotFoundException(
-                        EmailAccount.class, command.emailAccountId()));
-
-        if (!account.isActive()) {
-            throw new IllegalStateException("Cannot ingest email for deactivated account: " + account.getId());
-        }
-
-        FetchedEmailData rawMessage = gmailProvider.fetchMessage(account, command.gmailMessageId());
-
-        EmailMessage emailMessage = emailParser.parse(
-                rawMessage, account.getId(), account.getEmailAddress());
-
-        messageRepository.save(emailMessage);
-
-        eventPublisher.publish(new EmailIngestedEvent(
-                emailMessage.getId(),
-                emailMessage.getGmailMessageId(),
-                account.getId(),
-                resolveCorrelationId(command)));
-
-        return emailMessage;
-    }
-
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     @Override
     public int sync(InitialSyncCommand command) {
         EmailAccount account = accountRepository.findById(command.emailAccountId())
                 .orElseThrow(() -> new EntityNotFoundException(
                         EmailAccount.class, command.emailAccountId()));
+
+        String syncCorrelationId = CorrelationIdHolder.generateNew();
 
         List<String> messageIds;
         String latestHistoryId = null;
@@ -113,39 +73,30 @@ public class EmailIngestionApplicationService
 
         List<String> failedIds = new ArrayList<>();
         List<String> successfulIds = new ArrayList<>();
-        int count = 0;
 
         for (String gmailMessageId : messageIds) {
             try {
                 IngestEmailCommand ingestCmd = new IngestEmailCommand(
-                        command.emailAccountId(), gmailMessageId, CorrelationIdHolder.current());
-                ingest(ingestCmd);
+                        command.emailAccountId(), gmailMessageId, syncCorrelationId);
+                ingestionHandler.ingest(ingestCmd);
                 successfulIds.add(gmailMessageId);
-                count++;
             } catch (Exception e) {
-                log.error("Failed to ingest message {} for account {}: {}",
-                        gmailMessageId, command.emailAccountId(), e.getMessage(), e);
+                log.error("Failed to ingest message {} for account {}",
+                        gmailMessageId, command.emailAccountId(), e);
                 failedIds.add(gmailMessageId);
             }
         }
 
         if (!failedIds.isEmpty()) {
             log.warn("{}/{} messages failed during sync for account {}",
-                    failedIds.size(), failedIds.size() + successfulIds.size(), command.emailAccountId());
+                    failedIds.size(), messageIds.size(), command.emailAccountId());
         }
 
-        if (latestHistoryId != null && !successfulIds.isEmpty()) {
+        if (latestHistoryId != null) {
             account.updateSyncState(account.getSyncState().withUpdatedHistoryId(latestHistoryId));
             accountRepository.save(account);
         }
 
-        return count;
-    }
-
-    private static String resolveCorrelationId(IngestEmailCommand command) {
-        if (command.correlationId() != null && !command.correlationId().isBlank()) {
-            return command.correlationId();
-        }
-        return CorrelationIdHolder.current();
+        return successfulIds.size();
     }
 }

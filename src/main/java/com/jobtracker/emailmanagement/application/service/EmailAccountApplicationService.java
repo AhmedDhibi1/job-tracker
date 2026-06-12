@@ -8,18 +8,20 @@ import com.jobtracker.emailmanagement.application.port.outbound.PushSubscription
 import com.jobtracker.emailmanagement.domain.event.EmailAccountDeactivatedEvent;
 import com.jobtracker.emailmanagement.domain.event.EmailAccountRegisteredEvent;
 import com.jobtracker.emailmanagement.domain.exception.DuplicateEmailAccountException;
+import com.jobtracker.emailmanagement.domain.exception.PrimaryAccountAlreadyExistsException;
 import com.jobtracker.emailmanagement.domain.model.EmailAccount;
 import com.jobtracker.emailmanagement.domain.model.OAuthTokenPair;
 import com.jobtracker.shared.CorrelationIdHolder;
-import com.jobtracker.shared.application.exception.ConcurrentModificationException;
 import com.jobtracker.shared.application.exception.EntityNotFoundException;
 import com.jobtracker.shared.application.port.outbound.ApplicationEventPublisherPort;
 import com.jobtracker.shared.domain.valueobject.EmailAddress;
-import jakarta.persistence.OptimisticLockException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.event.TransactionPhase;
+import org.springframework.transaction.event.TransactionalEventListener;
+
 import java.util.UUID;
 
 @Service
@@ -51,12 +53,10 @@ public class EmailAccountApplicationService
         }
 
         if (command.isPrimary()) {
-            accountRepository.findAllActive().stream()
-                    .filter(EmailAccount::isPrimary)
-                    .findAny()
-                    .ifPresent(existing -> {
-                        throw new IllegalStateException("A primary account already exists: " + existing.getId());
-                    });
+            if (accountRepository.existsByIsPrimaryTrue()) {
+                throw new PrimaryAccountAlreadyExistsException(
+                        "A primary account already exists for this user");
+            }
         }
 
         OAuthTokenPair tokens = new OAuthTokenPair(
@@ -77,22 +77,27 @@ public class EmailAccountApplicationService
     @Override
     @Transactional
     public void deactivate(UUID accountId, String reason) {
-        try {
-            EmailAccount account = accountRepository.findById(accountId)
-                    .orElseThrow(() -> new EntityNotFoundException(EmailAccount.class, accountId));
+        EmailAccount account = accountRepository.findById(accountId)
+                .orElseThrow(() -> new EntityNotFoundException(EmailAccount.class, accountId));
 
-            account.deactivate();
-            account.updateSyncState(account.getSyncState().withWatchStopped());
-            accountRepository.save(account);
+        account.deactivate();
+        account.updateSyncState(account.getSyncState().withWatchStopped());
+        accountRepository.save(account);
 
-            pushSubscriptionPort.stopWatch(account);
+        eventPublisher.publish(new EmailAccountDeactivatedEvent(
+                accountId, account.getEmailAddress(), reason, CorrelationIdHolder.current()));
+    }
 
-            eventPublisher.publish(new EmailAccountDeactivatedEvent(
-                    accountId, account.getEmailAddress(), reason, CorrelationIdHolder.current()));
-
-        } catch (OptimisticLockException e) {
-            log.warn("Concurrent modification of account {}", accountId);
-            throw new ConcurrentModificationException("EmailAccount", accountId.toString(), e);
-        }
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void onDeactivated(EmailAccountDeactivatedEvent event) {
+        accountRepository.findById(event.getAccountId())
+                .ifPresent(account -> {
+                    try {
+                        pushSubscriptionPort.stopWatch(account);
+                    } catch (Exception e) {
+                        log.error("Failed to stop Gmail watch for deactivated account {}",
+                                event.getAccountId(), e);
+                    }
+                });
     }
 }

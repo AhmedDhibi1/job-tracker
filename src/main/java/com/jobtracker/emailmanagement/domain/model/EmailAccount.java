@@ -15,7 +15,7 @@ public class EmailAccount {
     private SyncState syncState;
     private int emptyPollCount;
     private boolean active;
-    private Long version;   
+    private Long version;
 
 
     public EmailAccount(
@@ -30,7 +30,7 @@ public class EmailAccount {
             Long version) {
         this.id = Objects.requireNonNull(id,"id must not be null");
         this.emailAddress = Objects.requireNonNull(emailAddress,"emailAddress must not be null");
-        this.displayName = Objects.requireNonNull(displayName, "displayName must not be null");
+        this.displayName = validateDisplayName(displayName);
         this.isPrimary = isPrimary;
         this.oauthTokens = Objects.requireNonNull(oauthTokens,"oauthTokens must not be null");
         this.syncState = Objects.requireNonNull(syncState, "syncState must not be null");
@@ -68,7 +68,6 @@ public class EmailAccount {
         this.oauthTokens = Objects.requireNonNull(newTokens, "newTokens must not be null");
     }
 
-    /** Updates the Gmail synchronization state. */
     public void updateSyncState(SyncState newState) {
         this.syncState = Objects.requireNonNull(newState, "newState must not be null");
     }
@@ -93,6 +92,13 @@ public class EmailAccount {
             throw new IllegalStateException("Account " + id + " is already active");
         }
         this.active = true;
+    }
+
+    private static String validateDisplayName(String displayName) {
+        if (displayName == null || displayName.isBlank()) {
+            throw new IllegalArgumentException("displayName must not be null or blank");
+        }
+        return displayName;
     }
 
     @Override

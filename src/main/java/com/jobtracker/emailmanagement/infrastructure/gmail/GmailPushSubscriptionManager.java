@@ -5,6 +5,7 @@ import com.google.api.services.gmail.model.WatchRequest;
 import com.google.api.services.gmail.model.WatchResponse;
 import com.jobtracker.emailmanagement.application.port.outbound.GmailProviderPort.WatchResult;
 import com.jobtracker.emailmanagement.application.port.outbound.PushSubscriptionPort;
+import com.jobtracker.emailmanagement.application.port.outbound.WatchManagementPort;
 import com.jobtracker.emailmanagement.domain.model.EmailAccount;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -16,7 +17,7 @@ import java.time.Instant;
 import java.util.List;
 
 @Component
-public class GmailPushSubscriptionManager implements PushSubscriptionPort {
+public class GmailPushSubscriptionManager implements PushSubscriptionPort, WatchManagementPort {
 
     private static final Logger log = LoggerFactory.getLogger(GmailPushSubscriptionManager.class);
 
@@ -33,6 +34,7 @@ public class GmailPushSubscriptionManager implements PushSubscriptionPort {
         this.watchLabelIds = watchLabelIds;
     }
 
+    @Override
     public WatchResult setupWatch(EmailAccount account) {
         if (pubSubTopicName == null || pubSubTopicName.isBlank()) {
             throw new IllegalStateException(
@@ -60,11 +62,13 @@ public class GmailPushSubscriptionManager implements PushSubscriptionPort {
             return new WatchResult(expiration, historyId);
 
         } catch (IOException e) {
-            log.error("Failed to setup Gmail watch for account {}: {}", account.getId(), e.getMessage());
-            throw new RuntimeException("Gmail watch setup failed: " + e.getMessage(), e);
+            log.error("Failed to setup Gmail watch for account {}", account.getId(), e);
+            throw new GmailApiException("Gmail watch setup failed", e,
+                    account.getId().toString(), GmailApiException.Operation.SETUP_WATCH);
         }
     }
 
+    @Override
     public WatchResult renewWatch(EmailAccount account) {
         log.debug("Renewing Gmail watch for account {}", account.getId());
         return setupWatch(account);
@@ -78,8 +82,7 @@ public class GmailPushSubscriptionManager implements PushSubscriptionPort {
             client.users().stop("me").execute();
             log.info("Gmail watch stopped for account {}", account.getId());
         } catch (IOException e) {
-            log.warn("Failed to stop Gmail watch for account {}: {}. " +
-                    "The watch will expire naturally.", account.getId(), e.getMessage());
+            log.warn("Failed to stop Gmail watch for account {}. The watch will expire naturally.", account.getId(), e);
         }
     }
 }

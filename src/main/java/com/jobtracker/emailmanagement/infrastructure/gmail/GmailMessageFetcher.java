@@ -8,8 +8,6 @@ import com.google.api.services.gmail.model.MessagePartBody;
 import com.google.api.services.gmail.model.MessagePartHeader;
 import com.jobtracker.emailmanagement.domain.model.EmailAccount;
 import com.jobtracker.emailmanagement.infrastructure.gmail.model.RawGmailMessage;
-import jakarta.mail.internet.AddressException;
-import jakarta.mail.internet.InternetAddress;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -17,16 +15,15 @@ import org.springframework.stereotype.Component;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Objects;
 
 @Component
 public class GmailMessageFetcher {
@@ -50,12 +47,14 @@ public class GmailMessageFetcher {
         DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.ENGLISH),
     };
 
+    private static final DateTimeFormatter GMAIL_QUERY_DATE =
+            DateTimeFormatter.ofPattern("yyyy/MM/dd");
+
     private final GmailClientFactory clientFactory;
 
     public GmailMessageFetcher(GmailClientFactory clientFactory) {
         this.clientFactory = clientFactory;
     }
-
 
     public RawGmailMessage fetch(EmailAccount account, String gmailMessageId) {
         Gmail client = clientFactory.getClient(account);
@@ -69,9 +68,10 @@ public class GmailMessageFetcher {
             return parseMessage(message, account);
 
         } catch (IOException e) {
-            log.error("Failed to fetch message {} for account {}: {}",
-                    gmailMessageId, account.getId(), e.getMessage());
-            throw new RuntimeException("Gmail message fetch failed: " + e.getMessage(), e);
+            log.error("Failed to fetch message {} for account {}",
+                    gmailMessageId, account.getId(), e);
+            throw new GmailApiException("Gmail message fetch failed", e,
+                    account.getId().toString(), GmailApiException.Operation.FETCH_MESSAGE);
         }
     }
 
@@ -81,12 +81,12 @@ public class GmailMessageFetcher {
         try {
             List<String> messageIds = new ArrayList<>();
             String pageToken = null;
-            long afterMillis = afterDate.toEpochMilli();
+            String queryDate = GMAIL_QUERY_DATE.format(afterDate.atZone(ZoneId.systemDefault()));
 
             do {
                 Gmail.Users.Messages.List request = client.users().messages()
                         .list("me")
-                        .setQ("after:" + (afterMillis / 1000))
+                        .setQ("after:" + queryDate)
                         .setMaxResults(500L);
 
                 if (pageToken != null) {
@@ -108,17 +108,17 @@ public class GmailMessageFetcher {
             return messageIds;
 
         } catch (IOException e) {
-            log.error("Failed to list messages for account {}: {}", account.getId(), e.getMessage());
-            throw new RuntimeException("Gmail message list failed: " + e.getMessage(), e);
+            log.error("Failed to list messages for account {}", account.getId(), e);
+            throw new GmailApiException("Gmail message list failed", e,
+                    account.getId().toString(), GmailApiException.Operation.LIST_MESSAGES);
         }
     }
-
 
     private RawGmailMessage parseMessage(Message message, EmailAccount account) {
         Map<String, String> headers = extractHeaders(message.getPayload());
 
         String from = headers.getOrDefault(HEADER_FROM, "");
-        List<String> to = parseAddressList(headers.getOrDefault(HEADER_TO, ""));
+        String toHeader = headers.getOrDefault(HEADER_TO, "");
         String subject = headers.getOrDefault(HEADER_SUBJECT, "");
         Instant sentAt = parseDateHeader(message, headers.get(HEADER_DATE));
 
@@ -126,7 +126,10 @@ public class GmailMessageFetcher {
 
         String bodyText = extractBody(allParts, MIME_TYPE_TEXT_PLAIN);
         String bodyHtml = extractBody(allParts, MIME_TYPE_TEXT_HTML);
-        List<RawGmailMessage.MimePart> mimeParts = allParts.stream().map(this::toRawMimePart).toList();
+        List<RawGmailMessage.MimePart> mimeParts = allParts.stream()
+                .map(this::toRawMimePart)
+                .filter(p -> p.mimeType() != null)
+                .toList();
 
         List<String> accountEmails = List.of(account.getEmailAddress().value());
 
@@ -137,7 +140,7 @@ public class GmailMessageFetcher {
                 mimeParts,
                 sentAt,
                 from,
-                to,
+                List.of(toHeader),
                 subject,
                 bodyText,
                 bodyHtml,
@@ -186,31 +189,12 @@ public class GmailMessageFetcher {
         return headers;
     }
 
-    private List<String> parseAddressList(String headerValue) {
-        if (headerValue == null || headerValue.isBlank()) {
-            return List.of();
-        }
-        try {
-            return Arrays.stream(InternetAddress.parse(headerValue))
-                    .map(InternetAddress::getAddress)
-                    .filter(Objects::nonNull)
-                    .toList();
-        } catch (AddressException e) {
-            log.warn("Failed to parse address list '{}', falling back to split", headerValue);
-            return Arrays.stream(headerValue.split(","))
-                    .map(String::trim)
-                    .filter(s -> !s.isEmpty())
-                    .toList();
-        }
-    }
-
     private Instant parseDateHeader(Message message, String dateHeader) {
         if (dateHeader != null) {
             for (DateTimeFormatter formatter : DATE_FORMATTERS) {
                 try {
                     return ZonedDateTime.parse(dateHeader.trim(), formatter).toInstant();
                 } catch (DateTimeParseException e) {
-                    // Try next formatter
                 }
             }
             log.warn("All date formatters failed for '{}', falling back to internalDate", dateHeader);

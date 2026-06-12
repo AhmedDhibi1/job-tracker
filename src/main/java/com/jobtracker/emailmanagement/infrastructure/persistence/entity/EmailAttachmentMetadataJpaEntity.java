@@ -10,7 +10,6 @@ import java.util.UUID;
 public class EmailAttachmentMetadataJpaEntity {
 
     @Id
-    @GeneratedValue
     @UuidGenerator
     private UUID id;
 

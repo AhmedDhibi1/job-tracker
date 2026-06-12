@@ -8,6 +8,7 @@ import org.springframework.stereotype.Component;
 
 import javax.crypto.AEADBadTagException;
 import javax.crypto.Cipher;
+import javax.crypto.IllegalBlockSizeException;
 import javax.crypto.spec.GCMParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
 import java.nio.ByteBuffer;
@@ -64,6 +65,10 @@ public class AesGcmEncryptionAdapter implements EmailEncryptionPort {
             byteBuffer.put(cipherText);
 
             return Base64.getEncoder().encodeToString(byteBuffer.array());
+        } catch (AEADBadTagException e) {
+            throw new EncryptionException("Encryption failed: authentication tag mismatch", e);
+        } catch (IllegalBlockSizeException e) {
+            throw new EncryptionException("Encryption failed: invalid block size", e);
         } catch (Exception e) {
             throw new EncryptionException("Encryption failed", e);
         }
@@ -78,12 +83,11 @@ public class AesGcmEncryptionAdapter implements EmailEncryptionPort {
                 try {
                     return decryptWithKey(cipherText, previousKey);
                 } catch (AEADBadTagException ex) {
-                    throw new DecryptionFailedException("Decryption failed with both current and previous keys", ex);
-                } catch (Exception ex) {
-                    throw new EncryptionException("Decryption failed with previous key", ex);
+                    throw new DecryptionFailedException(
+                            "Authentication failed with both current and previous keys: possible tampering", ex);
                 }
             }
-            throw new DecryptionFailedException("Decryption failed with current key", e);
+            throw new DecryptionFailedException("Authentication failed with current key: possible tampering", e);
         } catch (IllegalArgumentException e) {
             throw new DecryptionFailedException("Invalid ciphertext format", e);
         } catch (Exception e) {

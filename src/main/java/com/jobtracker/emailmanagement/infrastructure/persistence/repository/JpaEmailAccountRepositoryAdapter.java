@@ -4,7 +4,9 @@ import com.jobtracker.emailmanagement.application.port.outbound.EmailAccountRepo
 import com.jobtracker.emailmanagement.domain.model.EmailAccount;
 import com.jobtracker.emailmanagement.infrastructure.persistence.entity.EmailAccountJpaEntity;
 import com.jobtracker.emailmanagement.infrastructure.persistence.mapper.EmailAccountPersistenceMapper;
+import com.jobtracker.shared.application.exception.ConcurrentModificationException;
 import com.jobtracker.shared.domain.valueobject.EmailAddress;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -48,13 +50,22 @@ public class JpaEmailAccountRepositoryAdapter implements EmailAccountRepository 
     @Override
     @Transactional
     public EmailAccount save(EmailAccount account) {
-        EmailAccountJpaEntity entity = mapper.toEntity(account);
-        EmailAccountJpaEntity saved = springDataRepository.save(entity);
-        return mapper.toDomain(saved);
+        try {
+            EmailAccountJpaEntity entity = mapper.toEntity(account);
+            EmailAccountJpaEntity saved = springDataRepository.save(entity);
+            return mapper.toDomain(saved);
+        } catch (OptimisticLockingFailureException e) {
+            throw new ConcurrentModificationException("EmailAccount", account.getId().toString(), e);
+        }
     }
 
     @Override
     public boolean existsByEmailAddress(EmailAddress emailAddress) {
         return springDataRepository.existsByEmailAddress(emailAddress.value());
+    }
+
+    @Override
+    public boolean existsByIsPrimaryTrue() {
+        return springDataRepository.existsByIsPrimaryTrue();
     }
 }

@@ -4,6 +4,7 @@ import com.jobtracker.emailmanagement.application.port.outbound.EmailMessageRepo
 import com.jobtracker.emailmanagement.domain.model.EmailMessage;
 import com.jobtracker.emailmanagement.infrastructure.persistence.entity.EmailMessageJpaEntity;
 import com.jobtracker.emailmanagement.infrastructure.persistence.mapper.EmailMessagePersistenceMapper;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -27,9 +28,18 @@ public class JpaEmailMessageRepositoryAdapter implements EmailMessageRepository 
     @Override
     @Transactional
     public EmailMessage save(EmailMessage message) {
-        EmailMessageJpaEntity entity = mapper.toEntity(message);
-        EmailMessageJpaEntity saved = springDataRepository.save(entity);
-        return mapper.toDomain(saved);
+        try {
+            EmailMessageJpaEntity entity = mapper.toEntity(message);
+            EmailMessageJpaEntity saved = springDataRepository.save(entity);
+            return mapper.toDomain(saved);
+        } catch (DataIntegrityViolationException e) {
+            if (message.getGmailMessageId() != null) {
+                return springDataRepository.findByGmailMessageId(message.getGmailMessageId())
+                        .map(mapper::toDomain)
+                        .orElseThrow(() -> e);
+            }
+            throw e;
+        }
     }
 
     @Override

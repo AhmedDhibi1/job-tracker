@@ -1,15 +1,14 @@
 package com.jobtracker.emailmanagement.application.port.outbound;
 
-import com.jobtracker.emailmanagement.application.dto.EmailHistoryDelta;
-import com.jobtracker.emailmanagement.application.dto.FetchedEmailData;
 import com.jobtracker.emailmanagement.application.dto.HistoryDeltaResult;
 import com.jobtracker.emailmanagement.domain.model.EmailAccount;
+import com.jobtracker.emailmanagement.domain.model.RawEmailInput;
 import java.time.Instant;
 import java.util.List;
 
 public interface GmailProviderPort {
 
-    FetchedEmailData fetchMessage(EmailAccount account, String gmailMessageId);
+    RawEmailInput fetchMessage(EmailAccount account, String gmailMessageId);
 
     HistoryDeltaResult fetchHistoryDelta(EmailAccount account, String fromHistoryId);
 

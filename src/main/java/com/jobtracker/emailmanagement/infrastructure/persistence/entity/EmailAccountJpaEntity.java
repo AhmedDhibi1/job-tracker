@@ -7,7 +7,9 @@ import java.time.Instant;
 import java.util.UUID;
 
 @Entity
-@Table(name = "email_accounts")
+@Table(name = "email_accounts", indexes = {
+    @Index(name = "idx_email_account_active", columnList = "active")
+})
 public class EmailAccountJpaEntity {
 
     @Id
@@ -33,7 +35,7 @@ public class EmailAccountJpaEntity {
     @Column(name = "token_expiry", nullable = false)
     private Instant tokenExpiry;
 
-    @Column(name = "history_id", length = 100)
+    @Column(name = "sync_history_id", length = 100)
     private String historyId;
 
     @Column(name = "watch_expiration")

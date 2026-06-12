@@ -26,7 +26,7 @@ public class PubSubPayloadDecoder {
         try {
             decodedBytes = Base64.getDecoder().decode(base64Payload);
         } catch (IllegalArgumentException e) {
-            log.error("Failed to decode Base64 Pub/Sub payload: {}", e.getMessage());
+            log.error("Failed to decode Base64 Pub/Sub payload", e);
             throw new IllegalArgumentException("Invalid Base64 encoding in Pub/Sub payload", e);
         }
 
@@ -49,7 +49,7 @@ public class PubSubPayloadDecoder {
             return new PubSubNotification(emailAddress, historyId, null);
 
         } catch (IOException e) {
-            log.error("Failed to parse Pub/Sub payload: {}", e.getMessage());
+            log.error("Failed to parse Pub/Sub payload", e);
             throw new IllegalArgumentException("Invalid Pub/Sub payload format", e);
         }
     }
@@ -70,13 +70,21 @@ public class PubSubPayloadDecoder {
             }
 
             PubSubNotification notification = decode(base64Data);
+            String resolvedAccountId = (accountId != null && !accountId.isBlank())
+                    ? accountId
+                    : notification.accountId();
+            if (resolvedAccountId == null) {
+                throw new IllegalArgumentException(
+                        "Pub/Sub notification missing accountId and cannot be resolved from accountEmail: "
+                        + notification.accountEmail());
+            }
             return new PubSubNotification(
                     notification.accountEmail(),
                     notification.historyId(),
-                    (accountId != null && !accountId.isBlank()) ? accountId : notification.accountId());
+                    resolvedAccountId);
 
         } catch (IOException e) {
-            log.error("Failed to parse Pub/Sub envelope: {}", e.getMessage());
+            log.error("Failed to parse Pub/Sub envelope", e);
             throw new IllegalArgumentException("Invalid Pub/Sub envelope format", e);
         }
     }

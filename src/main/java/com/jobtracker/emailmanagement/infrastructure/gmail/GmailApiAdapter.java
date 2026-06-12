@@ -1,10 +1,11 @@
 package com.jobtracker.emailmanagement.infrastructure.gmail;
 
-import com.jobtracker.emailmanagement.application.dto.EmailHistoryDelta;
-import com.jobtracker.emailmanagement.application.dto.FetchedEmailData;
 import com.jobtracker.emailmanagement.application.dto.HistoryDeltaResult;
+import com.jobtracker.emailmanagement.application.dto.EmailHistoryDelta;
+import com.jobtracker.emailmanagement.application.port.outbound.EmailAddressParserPort;
 import com.jobtracker.emailmanagement.application.port.outbound.GmailProviderPort;
 import com.jobtracker.emailmanagement.domain.model.EmailAccount;
+import com.jobtracker.emailmanagement.domain.model.RawEmailInput;
 import com.jobtracker.emailmanagement.infrastructure.gmail.model.RawGmailMessage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -21,20 +22,23 @@ public class GmailApiAdapter implements GmailProviderPort {
     private final GmailMessageFetcher messageFetcher;
     private final GmailHistoryFetcher historyFetcher;
     private final GmailPushSubscriptionManager pushManager;
+    private final EmailAddressParserPort addressParser;
 
     public GmailApiAdapter(GmailMessageFetcher messageFetcher,
                            GmailHistoryFetcher historyFetcher,
-                           GmailPushSubscriptionManager pushManager) {
+                           GmailPushSubscriptionManager pushManager,
+                           EmailAddressParserPort addressParser) {
         this.messageFetcher = messageFetcher;
         this.historyFetcher = historyFetcher;
         this.pushManager = pushManager;
+        this.addressParser = addressParser;
     }
 
     @Override
-    public FetchedEmailData fetchMessage(EmailAccount account, String gmailMessageId) {
+    public RawEmailInput fetchMessage(EmailAccount account, String gmailMessageId) {
         log.debug("Fetching message {} for account {}", gmailMessageId, account.getId());
         RawGmailMessage raw = messageFetcher.fetch(account, gmailMessageId);
-        return toFetchedEmailData(raw);
+        return toRawEmailInput(raw);
     }
 
     @Override
@@ -65,26 +69,25 @@ public class GmailApiAdapter implements GmailProviderPort {
         return pushManager.renewWatch(account);
     }
 
-    private static FetchedEmailData toFetchedEmailData(RawGmailMessage raw) {
-        List<FetchedEmailData.AttachmentPart> parts = raw.parts() == null ? List.of()
+    private RawEmailInput toRawEmailInput(RawGmailMessage raw) {
+        List<RawEmailInput.PartInput> parts = raw.parts() == null ? List.of()
                 : raw.parts().stream()
-                    .map(p -> new FetchedEmailData.AttachmentPart(
+                    .map(p -> new RawEmailInput.PartInput(
                             p.mimeType(), p.contentDisposition(), p.filename(),
                             p.body(), p.gmailAttachmentId(), p.sizeBytes()))
                     .toList();
 
-        return new FetchedEmailData(
+        return new RawEmailInput(
                 raw.gmailMessageId(),
                 raw.gmailThreadId(),
                 raw.headers(),
                 parts,
                 raw.sentAt(),
-                raw.from(),
-                raw.to(),
+                addressParser.parseSingle(raw.from()),
+                addressParser.parse(raw.headers().getOrDefault("to", "")),
                 raw.subject(),
                 raw.bodyText(),
-                raw.bodyHtml(),
-                raw.accountEmailAddresses()
+                raw.bodyHtml()
         );
     }
 }

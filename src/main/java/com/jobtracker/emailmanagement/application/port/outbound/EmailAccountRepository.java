@@ -13,4 +13,5 @@ public interface EmailAccountRepository {
     List<EmailAccount> findAll();
     List<EmailAccount> findAllActive();
     boolean existsByEmailAddress(EmailAddress emailAddress);
+    boolean existsByIsPrimaryTrue();
 }
