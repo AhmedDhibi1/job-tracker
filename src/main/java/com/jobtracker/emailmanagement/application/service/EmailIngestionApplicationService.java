@@ -8,6 +8,7 @@ import com.jobtracker.emailmanagement.application.port.inbound.InitialSyncUseCas
 import com.jobtracker.emailmanagement.application.port.outbound.EmailAccountRepository;
 import com.jobtracker.emailmanagement.application.port.outbound.GmailProviderPort;
 import com.jobtracker.emailmanagement.domain.model.EmailAccount;
+import com.jobtracker.emailmanagement.domain.model.EmailMessage;
 import com.jobtracker.shared.CorrelationIdHolder;
 import com.jobtracker.shared.application.exception.EntityNotFoundException;
 import org.slf4j.Logger;

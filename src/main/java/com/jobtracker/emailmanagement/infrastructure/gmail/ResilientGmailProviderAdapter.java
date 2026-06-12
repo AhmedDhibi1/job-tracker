@@ -6,7 +6,6 @@ import com.jobtracker.emailmanagement.domain.model.EmailAccount;
 import com.jobtracker.emailmanagement.domain.model.RawEmailInput;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerConfig;
-import io.github.resilience4j.decorators.Decorators;
 import io.github.resilience4j.ratelimiter.RateLimiter;
 import io.github.resilience4j.ratelimiter.RateLimiterConfig;
 import io.github.resilience4j.retry.Retry;
@@ -84,11 +83,9 @@ public class ResilientGmailProviderAdapter implements GmailProviderPort {
     }
 
     private <T> T decorate(Supplier<T> supplier) {
-        return Decorators.ofSupplier(supplier)
-                .withRetry(retry)
-                .withRateLimiter(rateLimiter)
-                .withCircuitBreaker(circuitBreaker)
-                .decorate()
-                .get();
+        Supplier<T> decorated = Retry.decorateSupplier(retry, supplier);
+        decorated = RateLimiter.decorateSupplier(rateLimiter, decorated);
+        decorated = CircuitBreaker.decorateSupplier(circuitBreaker, decorated);
+        return decorated.get();
     }
 }

@@ -85,6 +85,8 @@ public class AesGcmEncryptionAdapter implements EmailEncryptionPort {
                 } catch (AEADBadTagException ex) {
                     throw new DecryptionFailedException(
                             "Authentication failed with both current and previous keys: possible tampering", ex);
+                } catch (Exception ex) {
+                    throw new DecryptionFailedException("Decryption failed with previous key", ex);
                 }
             }
             throw new DecryptionFailedException("Authentication failed with current key: possible tampering", e);

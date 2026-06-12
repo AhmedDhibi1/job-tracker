@@ -38,6 +38,7 @@ public class PubSubPayloadDecoder {
 
             String emailAddress = extractField(root, "emailAddress");
             String historyId = extractField(root, "historyId");
+            String accountId = extractField(root, "accountId");
 
             if (emailAddress == null || emailAddress.isBlank()) {
                 throw new IllegalArgumentException("Pub/Sub payload missing 'emailAddress' field");
@@ -46,7 +47,7 @@ public class PubSubPayloadDecoder {
                 throw new IllegalArgumentException("Pub/Sub payload missing 'historyId' field");
             }
 
-            return new PubSubNotification(emailAddress, historyId, null);
+            return new PubSubNotification(emailAddress, historyId, accountId);
 
         } catch (IOException e) {
             log.error("Failed to parse Pub/Sub payload", e);

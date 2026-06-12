@@ -14,13 +14,9 @@ import java.util.List;
 public class EmailMessagePersistenceMapper {
 
     public EmailMessage toDomain(EmailMessageJpaEntity entity) {
-        List<EmailAddress> recipients = entity.getRecipients() == null
-                ? List.of()
-                : entity.getRecipients().stream().map(EmailAddress::new).toList();
+        List<EmailAddress> recipients = entity.getRecipients().stream().map(EmailAddress::new).toList();
 
-        List<EmailAttachmentMetadata> attachments = entity.getAttachments() == null
-                ? List.of()
-                : entity.getAttachments().stream().map(this::toAttachmentDomain).toList();
+        List<EmailAttachmentMetadata> attachments = entity.getAttachments().stream().map(this::toAttachmentDomain).toList();
 
         EmailDirection direction = entity.getDirection() != null
                 ? EmailDirection.valueOf(entity.getDirection())

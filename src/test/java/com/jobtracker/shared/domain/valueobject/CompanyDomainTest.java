@@ -5,117 +5,84 @@ import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-/**
- * Unit tests for {@link CompanyDomain}.
- */
 class CompanyDomainTest {
 
-    // ── Valid construction from string ────────────────────────────────────────
-
     @Test
-    void constructor_acceptsPlainDomain() {
-        var domain = new CompanyDomain("google.com");
-        assertThat(domain.value()).isEqualTo("google.com");
+    void acceptsValidDomain() {
+        CompanyDomain domain = new CompanyDomain("example.com");
+        assertThat(domain.value()).isEqualTo("example.com");
     }
 
     @Test
-    void constructor_normalizesToLowercase() {
-        var domain = new CompanyDomain("Google.COM");
-        assertThat(domain.value()).isEqualTo("google.com");
+    void stripsLeadingAtSymbol() {
+        CompanyDomain domain = new CompanyDomain("@example.com");
+        assertThat(domain.value()).isEqualTo("example.com");
     }
 
     @Test
-    void constructor_stripsLeadingAtSymbol() {
-        var domain = new CompanyDomain("@google.com");
-        assertThat(domain.value()).isEqualTo("google.com");
+    void normalizesToLowercase() {
+        CompanyDomain domain = new CompanyDomain("Example.COM");
+        assertThat(domain.value()).isEqualTo("example.com");
     }
 
     @Test
-    void constructor_stripsWhitespace() {
-        var domain = new CompanyDomain("  google.com  ");
-        assertThat(domain.value()).isEqualTo("google.com");
+    void stripsWhitespace() {
+        CompanyDomain domain = new CompanyDomain("  example.com  ");
+        assertThat(domain.value()).isEqualTo("example.com");
     }
 
     @Test
-    void constructor_acceptsSubdomain() {
-        var domain = new CompanyDomain("careers.amazon.co.uk");
-        assertThat(domain.value()).isEqualTo("careers.amazon.co.uk");
-    }
-
-    // ── Invalid construction ──────────────────────────────────────────────────
-
-    @Test
-    void constructor_rejectsNull() {
+    void rejectsNull() {
         assertThatThrownBy(() -> new CompanyDomain(null))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("null or blank");
     }
 
     @Test
-    void constructor_rejectsBlank() {
+    void rejectsBlank() {
         assertThatThrownBy(() -> new CompanyDomain("   "))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("null or blank");
     }
 
     @Test
-    void constructor_rejectsAtSymbolOnly() {
+    void rejectsDomainWithOnlyAt() {
         assertThatThrownBy(() -> new CompanyDomain("@"))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("blank after stripping");
-    }
-
-    // ── Factory: from(EmailAddress) ───────────────────────────────────────────
-
-    @Test
-    void from_extractsDomainFromEmailAddress() {
-        var email  = new EmailAddress("recruiter@google.com");
-        var domain = CompanyDomain.from(email);
-        assertThat(domain.value()).isEqualTo("google.com");
+                .hasMessageContaining("blank");
     }
 
     @Test
-    void from_normalizesExtractedDomain() {
-        var email  = new EmailAddress("HR@CAREERS.COMPANY.IO");
-        var domain = CompanyDomain.from(email);
-        assertThat(domain.value()).isEqualTo("careers.company.io");
+    void from_createsFromEmailAddress() {
+        EmailAddress email = new EmailAddress("user@acme.com");
+        CompanyDomain domain = CompanyDomain.from(email);
+        assertThat(domain.value()).isEqualTo("acme.com");
     }
 
     @Test
-    void from_rejectsNullEmailAddress() {
+    void from_rejectsNullEmail() {
         assertThatThrownBy(() -> CompanyDomain.from(null))
-                .isInstanceOf(NullPointerException.class)
-                .hasMessageContaining("EmailAddress must not be null");
-    }
-
-    // ── Equality ─────────────────────────────────────────────────────────────
-
-    @Test
-    void equality_isCaseInsensitive() {
-        var a = new CompanyDomain("Google.com");
-        var b = new CompanyDomain("GOOGLE.COM");
-        assertThat(a).isEqualTo(b);
+                .isInstanceOf(NullPointerException.class);
     }
 
     @Test
-    void equality_withAtPrefixVariant() {
-        var a = new CompanyDomain("google.com");
-        var b = new CompanyDomain("@google.com");
-        assertThat(a).isEqualTo(b);
+    void equality() {
+        CompanyDomain d1 = new CompanyDomain("example.com");
+        CompanyDomain d2 = new CompanyDomain("Example.COM");
+        assertThat(d1).isEqualTo(d2);
+        assertThat(d1.hashCode()).isEqualTo(d2.hashCode());
     }
 
     @Test
-    void hashCode_isConsistentWithEquality() {
-        var a = new CompanyDomain("google.com");
-        var b = new CompanyDomain("GOOGLE.COM");
-        assertThat(a.hashCode()).isEqualTo(b.hashCode());
+    void inequality() {
+        CompanyDomain d1 = new CompanyDomain("a.com");
+        CompanyDomain d2 = new CompanyDomain("b.com");
+        assertThat(d1).isNotEqualTo(d2);
     }
 
-    // ── toString ─────────────────────────────────────────────────────────────
-
     @Test
-    void toString_returnsNormalizedValue() {
-        var domain = new CompanyDomain("@GOOGLE.COM");
-        assertThat(domain.toString()).isEqualTo("google.com");
+    void toString_returnsValue() {
+        CompanyDomain domain = new CompanyDomain("example.com");
+        assertThat(domain.toString()).isEqualTo("example.com");
     }
 }

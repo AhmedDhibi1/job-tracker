@@ -1,6 +1,7 @@
 package com.jobtracker.emailmanagement.infrastructure.persistence.mapper;
 
 import com.jobtracker.emailmanagement.domain.model.*;
+import com.jobtracker.emailmanagement.infrastructure.persistence.entity.EmailAttachmentMetadataJpaEntity;
 import com.jobtracker.emailmanagement.infrastructure.persistence.entity.EmailMessageJpaEntity;
 import com.jobtracker.shared.domain.valueobject.CompanyDomain;
 import com.jobtracker.shared.domain.valueobject.EmailAddress;
@@ -109,5 +110,113 @@ class EmailMessagePersistenceMapperTest {
         assertThat(restored.getClassificationScore()).isEqualTo(original.getClassificationScore());
         assertThat(restored.getClassificationConfidence()).isEqualTo(original.getClassificationConfidence());
         assertThat(restored.isProcessed()).isEqualTo(original.isProcessed());
+    }
+
+    @Test
+    void toDomain_nullRecipients_returnsEmptyList() {
+        EmailMessageJpaEntity entity = new EmailMessageJpaEntity();
+        entity.setId(UUID.randomUUID());
+        entity.setGmailMessageId("g123");
+        entity.setGmailThreadId("t456");
+        entity.setSubject("No Recip");
+        entity.setSenderEmail("s@x.com");
+        entity.setCompanyDomain("x.com");
+        entity.setDirection("INBOUND");
+        entity.setSentAt(Instant.now());
+        entity.setEmailAccountId(UUID.randomUUID());
+        entity.setVersion(0L);
+
+        EmailMessage result = mapper.toDomain(entity);
+
+        assertThat(result.getRecipients()).isEmpty();
+    }
+
+    @Test
+    void toEntity_nullClassification_omitsClassificationFields() {
+        EmailMessage domain = new EmailMessage.Builder()
+                .id(UUID.randomUUID())
+                .gmailMessageId("g123")
+                .gmailThreadId("t456")
+                .emailAccountId(UUID.randomUUID())
+                .sender(new EmailAddress("s@x.com"))
+                .recipients(List.of(new EmailAddress("r@x.com")))
+                .companyDomain(new CompanyDomain("x.com"))
+                .direction(EmailDirection.INBOUND)
+                .sentAt(Instant.now())
+                .subject("Test")
+                .bodyText("body")
+                .attachments(List.of())
+                .build();
+
+        EmailMessageJpaEntity entity = mapper.toEntity(domain);
+
+        assertThat(entity.getClassification()).isNull();
+        assertThat(entity.getClassificationResult()).isNull();
+        assertThat(entity.getClassificationScore()).isNull();
+        assertThat(entity.getClassificationConfidence()).isNull();
+    }
+
+    @Test
+    void toEntity_withAttachments_mapsCorrectly() {
+        List<EmailAttachmentMetadata> attachments = List.of(
+                new EmailAttachmentMetadata("resume.pdf", "application/pdf", 1024, "att1"),
+                new EmailAttachmentMetadata("letter.doc", "application/msword", 2048, null));
+        EmailMessage domain = new EmailMessage.Builder()
+                .id(UUID.randomUUID())
+                .gmailMessageId("g789")
+                .gmailThreadId("t012")
+                .emailAccountId(UUID.randomUUID())
+                .sender(new EmailAddress("s@x.com"))
+                .recipients(List.of(new EmailAddress("r@x.com")))
+                .companyDomain(new CompanyDomain("x.com"))
+                .direction(EmailDirection.INBOUND)
+                .sentAt(Instant.now())
+                .subject("With Attachments")
+                .bodyText("body")
+                .attachments(attachments)
+                .build();
+
+        EmailMessageJpaEntity entity = mapper.toEntity(domain);
+
+        assertThat(entity.getAttachments()).hasSize(2);
+        assertThat(entity.getAttachments().get(0).getFilename()).isEqualTo("resume.pdf");
+        assertThat(entity.getAttachments().get(0).getMimeType()).isEqualTo("application/pdf");
+        assertThat(entity.getAttachments().get(0).getSizeBytes()).isEqualTo(1024);
+        assertThat(entity.getAttachments().get(0).getGmailAttachmentId()).isEqualTo("att1");
+        assertThat(entity.getAttachments().get(1).getFilename()).isEqualTo("letter.doc");
+        assertThat(entity.getAttachments().get(1).getMimeType()).isEqualTo("application/msword");
+        assertThat(entity.getAttachments().get(1).getSizeBytes()).isEqualTo(2048);
+        assertThat(entity.getAttachments().get(1).getGmailAttachmentId()).isNull();
+    }
+
+    @Test
+    void toDomain_withAttachments_mapsCorrectly() {
+        EmailMessageJpaEntity entity = new EmailMessageJpaEntity();
+        entity.setId(UUID.randomUUID());
+        entity.setGmailMessageId("g101");
+        entity.setGmailThreadId("t112");
+        entity.setSubject("With Attach");
+        entity.setSenderEmail("s@x.com");
+        entity.setRecipients(List.of("r@x.com"));
+        entity.setCompanyDomain("x.com");
+        entity.setDirection("INBOUND");
+        entity.setSentAt(Instant.now());
+        entity.setEmailAccountId(UUID.randomUUID());
+        entity.setVersion(0L);
+
+        EmailAttachmentMetadataJpaEntity attEntity = new EmailAttachmentMetadataJpaEntity();
+        attEntity.setFilename("photo.jpg");
+        attEntity.setMimeType("image/jpeg");
+        attEntity.setSizeBytes(5000);
+        attEntity.setGmailAttachmentId("att99");
+        entity.setAttachments(List.of(attEntity));
+
+        EmailMessage result = mapper.toDomain(entity);
+
+        assertThat(result.getAttachments()).hasSize(1);
+        assertThat(result.getAttachments().get(0).filename()).isEqualTo("photo.jpg");
+        assertThat(result.getAttachments().get(0).mimeType()).isEqualTo("image/jpeg");
+        assertThat(result.getAttachments().get(0).sizeBytes()).isEqualTo(5000);
+        assertThat(result.getAttachments().get(0).gmailAttachmentId()).isEqualTo("att99");
     }
 }
